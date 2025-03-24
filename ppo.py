@@ -1,238 +1,166 @@
-from collections import defaultdict
-import multiprocessing
-
-import matplotlib.pyplot as plt
+#PPO-LSTM
 import torch
-from tensordict.nn import TensorDictModule
-from tensordict.nn.distributions import NormalParamExtractor
-from torch import nn
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.distributions import Normal
+import time
+import numpy as np
+import panda_gym
+import gymnasium as gym
+#Hyperparameters
+learning_rate  = 0.0003
+gamma           = 0.9
+lmbda           = 0.9
+eps_clip        = 0.2
+K_epoch         = 10
+rollout_len    = 3
+buffer_size    = 10
+minibatch_size = 32
 
-from torchrl.collectors import SyncDataCollector
-from torchrl.data.replay_buffers import ReplayBuffer
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
-from torchrl.data.replay_buffers.storages import LazyTensorStorage
-from torchrl.envs import (
-    Compose,
-    DoubleToFloat,
-    ObservationNorm,
-    StepCounter,
-    TransformedEnv,
-)
-from torchrl.envs.libs.gym import GymEnv
-from torchrl.envs.utils import check_env_specs, ExplorationType, set_exploration_type
-from torchrl.modules import ProbabilisticActor, TanhNormal, ValueOperator
-from torchrl.objectives import ClipPPOLoss
-from torchrl.objectives.value import GAE
-from tqdm import tqdm
+class PPO(nn.Module):
+    def __init__(self, input_dim=3, output_dim=1):
+        super(PPO, self).__init__()
+        self.data = []
+        
+        self.fc1   = nn.Linear(input_dim,128)
+        self.fc_mu = nn.Linear(128,output_dim)
+        self.fc_std  = nn.Linear(128,output_dim)
+        self.fc_v = nn.Linear(128,1)
+        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        self.optimization_step = 0
 
-is_fork = multiprocessing.get_start_method() == "fork"
-device = (
-    torch.device(0)
-    if torch.cuda.is_available() and not is_fork
-    else torch.device("cpu")
-)
-num_cells = 256  # number of cells in each layer i.e. output dim.
-lr = 3e-4
-max_grad_norm = 1.0
+    def pi(self, x, softmax_dim = 0):
+        x = F.relu(self.fc1(x))
+        mu = 2.0*torch.tanh(self.fc_mu(x))
+        std = F.softplus(self.fc_std(x))
+        return mu, std
+    
+    def v(self, x):
+        x = F.relu(self.fc1(x))
+        v = self.fc_v(x)
+        return v
+      
+    def put_data(self, transition):
+        self.data.append(transition)
+        
+    def make_batch(self):
+        s_batch, a_batch, r_batch, s_prime_batch, prob_a_batch, done_batch = [], [], [], [], [], []
+        data = []
 
-frames_per_batch = 1000
-# For a complete training, bring the number of frames up to 1M
-total_frames = 10_000
+        for j in range(buffer_size):
+            for i in range(minibatch_size):
+                rollout = self.data.pop()
+                s_lst, a_lst, r_lst, s_prime_lst, prob_a_lst, done_lst = [], [], [], [], [], []
 
-sub_batch_size = 64  # cardinality of the sub-samples gathered from the current data in the inner loop
-num_epochs = 10  # optimization steps per batch of data collected
-clip_epsilon = (
-    0.2  # clip value for PPO loss: see the equation in the intro for more context.
-)
-gamma = 0.99
-lmbda = 0.95
-entropy_eps = 1e-4
+                for transition in rollout:
+                    s, a, r, s_prime, prob_a, done = transition
+                    
+                    s_lst.append(s)
+                    a_lst.append(a.detach().numpy())
+                    r_lst.append([r])
+                    s_prime_lst.append(s_prime)
+                    prob_a_lst.append(prob_a.detach().numpy())
+                    done_mask = 0 if done else 1
+                    done_lst.append([done_mask])
 
-base_env = GymEnv("InvertedDoublePendulum-v4", device=device)
+                s_batch.append(s_lst)
+                a_batch.append(a_lst)
+                r_batch.append(r_lst)
+                s_prime_batch.append(s_prime_lst)
+                prob_a_batch.append(prob_a_lst)
+                done_batch.append(done_lst)
+                    
+            mini_batch = torch.tensor(s_batch, dtype=torch.float), torch.tensor(a_batch, dtype=torch.float), \
+                          torch.tensor(r_batch, dtype=torch.float), torch.tensor(s_prime_batch, dtype=torch.float), \
+                          torch.tensor(done_batch, dtype=torch.float), torch.tensor(prob_a_batch, dtype=torch.float)
+            data.append(mini_batch)
 
-env = TransformedEnv(
-    base_env,
-    Compose(
-        # normalize observations
-        ObservationNorm(in_keys=["observation"]),
-        DoubleToFloat(),
-        StepCounter(),
-    ),
-)
+        return data
 
-env.transform[0].init_stats(num_iter=1000, reduce_dim=0, cat_dim=0)
-print("normalization constant shape:", env.transform[0].loc.shape)
+    def calc_advantage(self, data):
+        data_with_adv = []
+        for mini_batch in data:
+            s, a, r, s_prime, done_mask, old_log_prob = mini_batch
+            with torch.no_grad():
+                td_target = r + gamma * self.v(s_prime) * done_mask
+                delta = td_target - self.v(s)
+            delta = delta.numpy()
 
-print("observation_spec:", env.observation_spec)
-print("reward_spec:", env.reward_spec)
-print("input_spec:", env.input_spec)
-print("action_spec (as defined by input_spec):", env.action_spec)
+            advantage_lst = []
+            advantage = 0.0
+            for delta_t in delta[::-1]:
+                advantage = gamma * lmbda * advantage + delta_t[0]
+                advantage_lst.append([advantage])
+            advantage_lst.reverse()
+            advantage = torch.tensor(advantage_lst, dtype=torch.float)
+            data_with_adv.append((s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage))
 
-check_env_specs(env)
+        return data_with_adv
 
-rollout = env.rollout(3)
-print("rollout of three steps:", rollout)
-print("Shape of the rollout TensorDict:", rollout.batch_size)
+        
+    def train_net(self):
+        if len(self.data) == minibatch_size * buffer_size:
+            data = self.make_batch()
+            data = self.calc_advantage(data)
 
-actor_net = nn.Sequential(
-    nn.LazyLinear(num_cells, device=device),
-    nn.Tanh(),
-    nn.LazyLinear(num_cells, device=device),
-    nn.Tanh(),
-    nn.LazyLinear(num_cells, device=device),
-    nn.Tanh(),
-    nn.LazyLinear(2 * env.action_spec.shape[-1], device=device),
-    NormalParamExtractor(),
-)
+            for i in range(K_epoch):
+                for mini_batch in data:
+                    s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage = mini_batch
 
-policy_module = TensorDictModule(
-    actor_net, in_keys=["observation"], out_keys=["loc", "scale"]
-)
+                    mu, std = self.pi(s, softmax_dim=1)
+                    dist = Normal(mu, std)
+                    log_prob = dist.log_prob(a)
+                    ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
 
-policy_module = ProbabilisticActor(
-    module=policy_module,
-    spec=env.action_spec,
-    in_keys=["loc", "scale"],
-    distribution_class=TanhNormal,
-    distribution_kwargs={
-        "low": env.action_spec_unbatched.space.low,
-        "high": env.action_spec_unbatched.space.high,
-    },
-    return_log_prob=True,
-    # we'll need the log-prob for the numerator of the importance weights
-)
+                    surr1 = ratio * advantage
+                    surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage
+                    loss = -torch.min(surr1, surr2) + F.smooth_l1_loss(self.v(s) , td_target)
 
-value_net = nn.Sequential(
-    nn.LazyLinear(num_cells, device=device),
-    nn.Tanh(),
-    nn.LazyLinear(num_cells, device=device),
-    nn.Tanh(),
-    nn.LazyLinear(num_cells, device=device),
-    nn.Tanh(),
-    nn.LazyLinear(1, device=device),
-)
+                    self.optimizer.zero_grad()
+                    loss.mean().backward()
+                    nn.utils.clip_grad_norm_(self.parameters(), 1.0)
+                    self.optimizer.step()
+                    self.optimization_step += 1
 
-value_module = ValueOperator(
-    module=value_net,
-    in_keys=["observation"],
-)
+        
+def main():
+    env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense",  render_mode="human")
+    model = PPO(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
+    score = 0.0
+    print_interval = 20
+    
+    for n_epi in range(10000):
+        s, _ = env.reset()
+        s = s['desired_goal']-s['achieved_goal']
+        done = False
+        rollout = []
+        count = 0
+        while count < 200 and not done:
+            for t in range(rollout_len):
+                mu, std = model.pi(torch.from_numpy(s).float())
+                dist = Normal(mu, std)
+                a = dist.sample()
+                log_prob = dist.log_prob(a)
+                s_prime, r, done, truncated, info = env.step(a.detach().numpy())
+                s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
 
-print("Running policy:", policy_module(env.reset()))
-print("Running value:", value_module(env.reset()))
+                rollout.append((s, a, r/10.0, s_prime, log_prob, done))
+                if len(rollout) == rollout_len:
+                    model.put_data(rollout)
+                    rollout = []
 
-collector = SyncDataCollector(
-    env,
-    policy_module,
-    frames_per_batch=frames_per_batch,
-    total_frames=total_frames,
-    split_trajs=False,
-    device=device,
-)
+                s = s_prime
+                score += r
+                count += 1
 
-replay_buffer = ReplayBuffer(
-    storage=LazyTensorStorage(max_size=frames_per_batch),
-    sampler=SamplerWithoutReplacement(),
-)
+            model.train_net()
 
-advantage_module = GAE(
-    gamma=gamma, lmbda=lmbda, value_network=value_module, average_gae=True
-)
+        if n_epi%print_interval==0 and n_epi!=0:
+            print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score/print_interval, model.optimization_step))
+            score = 0.0
 
-loss_module = ClipPPOLoss(
-    actor_network=policy_module,
-    critic_network=value_module,
-    clip_epsilon=clip_epsilon,
-    entropy_bonus=bool(entropy_eps),
-    entropy_coef=entropy_eps,
-    # these keys match by default but we set this for completeness
-    critic_coef=1.0,
-    loss_critic_type="smooth_l1",
-)
+    env.close()
 
-optim = torch.optim.Adam(loss_module.parameters(), lr)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-    optim, total_frames // frames_per_batch, 0.0
-)
-
-logs = defaultdict(list)
-pbar = tqdm(total=total_frames)
-eval_str = ""
-
-# We iterate over the collector until it reaches the total number of frames it was
-# designed to collect:
-for i, tensordict_data in enumerate(collector):
-    # we now have a batch of data to work with. Let's learn something from it.
-    for _ in range(num_epochs):
-        # We'll need an "advantage" signal to make PPO work.
-        # We re-compute it at each epoch as its value depends on the value
-        # network which is updated in the inner loop.
-        advantage_module(tensordict_data)
-        data_view = tensordict_data.reshape(-1)
-        replay_buffer.extend(data_view.cpu())
-        for _ in range(frames_per_batch // sub_batch_size):
-            subdata = replay_buffer.sample(sub_batch_size)
-            loss_vals = loss_module(subdata.to(device))
-            loss_value = (
-                loss_vals["loss_objective"]
-                + loss_vals["loss_critic"]
-                + loss_vals["loss_entropy"]
-            )
-
-            # Optimization: backward, grad clipping and optimization step
-            loss_value.backward()
-            # this is not strictly mandatory but it's good practice to keep
-            # your gradient norm bounded
-            torch.nn.utils.clip_grad_norm_(loss_module.parameters(), max_grad_norm)
-            optim.step()
-            optim.zero_grad()
-
-    logs["reward"].append(tensordict_data["next", "reward"].mean().item())
-    pbar.update(tensordict_data.numel())
-    cum_reward_str = (
-        f"average reward={logs['reward'][-1]: 4.4f} (init={logs['reward'][0]: 4.4f})"
-    )
-    logs["step_count"].append(tensordict_data["step_count"].max().item())
-    stepcount_str = f"step count (max): {logs['step_count'][-1]}"
-    logs["lr"].append(optim.param_groups[0]["lr"])
-    lr_str = f"lr policy: {logs['lr'][-1]: 4.4f}"
-    if i % 10 == 0:
-        # We evaluate the policy once every 10 batches of data.
-        # Evaluation is rather simple: execute the policy without exploration
-        # (take the expected value of the action distribution) for a given
-        # number of steps (1000, which is our ``env`` horizon).
-        # The ``rollout`` method of the ``env`` can take a policy as argument:
-        # it will then execute this policy at each step.
-        with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-            # execute a rollout with the trained policy
-            eval_rollout = env.rollout(1000, policy_module)
-            logs["eval reward"].append(eval_rollout["next", "reward"].mean().item())
-            logs["eval reward (sum)"].append(
-                eval_rollout["next", "reward"].sum().item()
-            )
-            logs["eval step_count"].append(eval_rollout["step_count"].max().item())
-            eval_str = (
-                f"eval cumulative reward: {logs['eval reward (sum)'][-1]: 4.4f} "
-                f"(init: {logs['eval reward (sum)'][0]: 4.4f}), "
-                f"eval step-count: {logs['eval step_count'][-1]}"
-            )
-            del eval_rollout
-    pbar.set_description(", ".join([eval_str, cum_reward_str, stepcount_str, lr_str]))
-
-    # We're also using a learning rate scheduler. Like the gradient clipping,
-    # this is a nice-to-have but nothing necessary for PPO to work.
-    scheduler.step()
-
-plt.figure(figsize=(10, 10))
-plt.subplot(2, 2, 1)
-plt.plot(logs["reward"])
-plt.title("training rewards (average)")
-plt.subplot(2, 2, 2)
-plt.plot(logs["step_count"])
-plt.title("Max step count (training)")
-plt.subplot(2, 2, 3)
-plt.plot(logs["eval reward (sum)"])
-plt.title("Return (test)")
-plt.subplot(2, 2, 4)
-plt.plot(logs["eval step_count"])
-plt.title("Max step count (test)")
-plt.show()
+if __name__ == '__main__':
+    main()

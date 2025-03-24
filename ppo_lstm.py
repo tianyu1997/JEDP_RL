@@ -1,5 +1,4 @@
 #PPO-LSTM
-import gym
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,6 +6,8 @@ import torch.optim as optim
 from torch.distributions import Categorical
 import time
 import numpy as np
+import panda_gym
+import gymnasium as gym
 
 #Hyperparameters
 learning_rate = 0.0005
@@ -99,7 +100,7 @@ class PPO(nn.Module):
             self.optimizer.step()
         
 def main():
-    env = gym.make('CartPole-v1')
+    env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense",  render_mode="human")
     model = PPO()
     score = 0.0
     print_interval = 20

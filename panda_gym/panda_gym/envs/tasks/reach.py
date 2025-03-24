@@ -21,6 +21,7 @@ class Reach(Task):
         self.get_ee_position = get_ee_position
         self.goal_range_low = np.array([-goal_range / 2, -goal_range / 2, 0])
         self.goal_range_high = np.array([goal_range / 2, goal_range / 2, goal_range])
+        self.history = self.get_achieved_goal()
         with self.sim.no_rendering():
             self._create_scene()
 
@@ -46,6 +47,7 @@ class Reach(Task):
     def reset(self) -> None:
         self.goal = self._sample_goal()
         self.sim.set_base_pose("target", self.goal, np.array([0.0, 0.0, 0.0, 1.0]))
+        self.history = self.get_achieved_goal()
 
     def _sample_goal(self) -> np.ndarray:
         """Randomize goal."""
@@ -57,8 +59,10 @@ class Reach(Task):
         return np.array(d < self.distance_threshold, dtype=bool)
 
     def compute_reward(self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info: Dict[str, Any] = {}) -> np.ndarray:
+        d0 = distance(self.history, desired_goal)
         d = distance(achieved_goal, desired_goal)
+        self.history = achieved_goal
         if self.reward_type == "sparse":
             return -np.array(d > self.distance_threshold, dtype=np.float32)
         else:
-            return -d.astype(np.float32)
+            return (d0-d).astype(np.float32)

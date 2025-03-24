@@ -12,8 +12,8 @@ import wandb  # 导入wandb
 
 # Hyperparameters
 learning_rate  = 0.0003
-gamma           = 0.98
-lmbda           = 0.95
+gamma           = 0.9
+lmbda           = 0.9
 eps_clip        = 0.2
 K_epoch         = 10
 rollout_len    = 3
@@ -40,9 +40,10 @@ class PPO(nn.Module):
         self.to(device)
 
     def pi(self, x):
+        action_scale = [0.1, 0.1]
         x = F.relu(self.fc1(x))
-        mu = torch.tanh(self.fc_mu(x))
-        std = F.softplus(self.fc_std(x))
+        mu = action_scale[0] * torch.tanh(self.fc_mu(x))
+        std = action_scale[1] * F.softplus(self.fc_std(x))
         return mu, std
     
     def v(self, x):
@@ -102,7 +103,7 @@ class PPO(nn.Module):
                 advantage = gamma * lmbda * advantage + delta_t[0]
                 advantage_lst.append([advantage])
             advantage_lst.reverse()
-            advantage = torch.tensor(advantage_lst, dtype=torch.float).to(device)
+            advantage = torch.tensor(np.array(advantage_lst), dtype=torch.float).to(device)
             data_with_adv.append((s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage))
 
         return data_with_adv
@@ -137,13 +138,13 @@ class PPO(nn.Module):
 
         
 def main():
-    wandb.init(project="JEDP_RL")  # 初始化wandb项目
+    wandb.init(project="JEDP_RL", name='ppo')  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     model = PPO(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
     score = 0.0
     print_interval = 20
     rollout = []
-    action_scale = [0.1, 0.1]
+    
     
     for n_epi in range(10000):
         s, _ = env.reset()
@@ -155,16 +156,16 @@ def main():
         while count < 200 and not done:
             for t in range(rollout_len):
                 mu, std = model.pi(s)
-                mu *= action_scale[0]
-                std *= action_scale[1]
                 dist = Normal(mu, std)
                 a = dist.sample()
                 log_prob = dist.log_prob(a)
                 s_prime, r, done, truncated, info = env.step(a.detach().cpu().numpy())
+                r *= 10
+                # print(r*100)
                 s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
                 s_prime = torch.tensor(s_prime, dtype=torch.float).to(device)
 
-                rollout.append((s, a, r/10.0, s_prime, log_prob, done))
+                rollout.append((s, a, r, s_prime, log_prob, done))
                 if len(rollout) == rollout_len:
                     model.put_data(rollout)
                     rollout = []
@@ -182,7 +183,7 @@ def main():
 
             # 保存模型checkpoint
         if n_epi % save_interval == 0 and n_epi != 0:
-            torch.save(model.state_dict(), f"checkpoints/ppo_checkpoint.pth")
+            torch.save(model.state_dict(), f"checkpoints/ppo_checkpoint_{n_epi}.pth")
 
     env.close()
 

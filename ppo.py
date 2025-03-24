@@ -8,13 +8,15 @@ import time
 import numpy as np
 import panda_gym
 import gymnasium as gym
-#Hyperparameters
+import wandb  # 导入wandb
+
+# Hyperparameters
 learning_rate  = 0.0003
 gamma           = 0.9
 lmbda           = 0.9
 eps_clip        = 0.2
 K_epoch         = 10
-rollout_len    = 3
+rollout_len    = 10
 buffer_size    = 10
 minibatch_size = 32
 
@@ -30,9 +32,9 @@ class PPO(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.optimization_step = 0
 
-    def pi(self, x, softmax_dim = 0):
+    def pi(self, x):
         x = F.relu(self.fc1(x))
-        mu = 2.0*torch.tanh(self.fc_mu(x))
+        mu = torch.tanh(self.fc_mu(x))
         std = F.softplus(self.fc_std(x))
         return mu, std
     
@@ -108,7 +110,7 @@ class PPO(nn.Module):
                 for mini_batch in data:
                     s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage = mini_batch
 
-                    mu, std = self.pi(s, softmax_dim=1)
+                    mu, std = self.pi(s)
                     dist = Normal(mu, std)
                     log_prob = dist.log_prob(a)
                     ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
@@ -123,12 +125,17 @@ class PPO(nn.Module):
                     self.optimizer.step()
                     self.optimization_step += 1
 
+                    # 记录损失到wandb
+                    wandb.log({"loss": loss.mean().item(), "optimization_step": self.optimization_step})
+
         
 def main():
+    wandb.init(project="JEDP_RL")  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense",  render_mode="human")
     model = PPO(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
     score = 0.0
     print_interval = 20
+    action_scale = [0.1, 0.1]
     
     for n_epi in range(10000):
         s, _ = env.reset()
@@ -139,6 +146,8 @@ def main():
         while count < 200 and not done:
             for t in range(rollout_len):
                 mu, std = model.pi(torch.from_numpy(s).float())
+                mu *= action_scale[0]
+                std *= action_scale[1]
                 dist = Normal(mu, std)
                 a = dist.sample()
                 log_prob = dist.log_prob(a)
@@ -156,9 +165,13 @@ def main():
 
             model.train_net()
 
-        if n_epi%print_interval==0 and n_epi!=0:
+        if n_epi % print_interval == 0 and n_epi != 0:
             print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score/print_interval, model.optimization_step))
+            wandb.log({"episode": n_epi, "avg_score": score/print_interval})  # 记录平均得分到wandb
             score = 0.0
+
+            # 保存模型checkpoint
+            torch.save(model.state_dict(), f"checkpoints/ppo_checkpoint_{n_epi}.pth")
 
     env.close()
 

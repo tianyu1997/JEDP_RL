@@ -29,11 +29,13 @@ class PPO_LSTM(nn.Module):
         super(PPO, self).__init__()
         self.data = []
         
-        self.fc1   = nn.Linear(input_dim*output_dim,128)
+        self.fc1   = nn.Linear(input_dim,128)
         self.lstm = nn.LSTM(128,128)
         self.fc_mu = nn.Linear(128,output_dim)
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128,1)
+        self.fc_s = nn.Linear(128,128)
+        self.fc_cf = nn.Linear(128,1)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.optimization_step = 0
 
@@ -43,7 +45,9 @@ class PPO_LSTM(nn.Module):
     def s(self, x, hidden):
         x = F.relu(self.fc1(x))
         x, hidden = self.lstm(x, hidden)
-        return x, hidden
+        self.state = self.fc_s(x)
+        self.cf = self.fc_cf(x)
+        return self.state, hidden
 
     def pi(self, x):
         action_scale = [0.1, 0.1]
@@ -131,7 +135,7 @@ class PPO_LSTM(nn.Module):
                 for mini_batch in data:
                     s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage, h_in, h_out = mini_batch
 
-                    mu, std = self.pi(s)
+                    mu, std = self.pi(s, h_in)
                     dist = Normal(mu, std)
                     log_prob = dist.log_prob(a)
                     ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
@@ -155,7 +159,7 @@ class PPO(nn.Module):
         super(PPO, self).__init__()
         self.data = []
         
-        self.fc1   = nn.Linear(input_dim*output_dim,128)
+        self.fc1   = nn.Linear(input_dim,128)
         self.fc_mu = nn.Linear(128,output_dim)
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128,1)
@@ -266,49 +270,53 @@ class PPO(nn.Module):
 def main():
     wandb.init(project="JEDP_RL", name='ajedp')  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
-    model = PPO(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
+    stater = PPO_LSTM(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
+    model = PPO(128, env.action_space.shape[0])
     score = 0.0
     print_interval = 20
     rollout = []
-    e_a = np.eye(env.action_space.shape[0])*0.01
     
     for n_epi in range(10000):
-        s, _ = env.reset()
-        s = s['desired_goal']-s['achieved_goal']
-        s = torch.tensor(s, dtype=torch.float).to(device)
+        h_out = (torch.zeros([1, 1, 128], dtype=torch.float), torch.zeros([1, 1, 128], dtype=torch.float))
+        obs, _ = env.reset()
+        obs = obs['desired_goal']-obs['achieved_goal']
+        obs = torch.tensor(obs, dtype=torch.float).to(device)
         done = False
         
         count = 0
         while count < 200 and not done:
-            while True:
-                e_s = []
-                for e in e_a:
-                    # print(e)
-                    s, _, _, truncated, info = env.step(e)
-                    s = s['desired_goal']-s['achieved_goal']
-                    e_s.append(s)
-
-                e_s = torch.tensor(e_s, dtype=torch.float).to(device).view(-1)
-                if count > 0:
-                    rollout.append((e_s_p, a, r, e_s, log_prob, done))
-                if len(rollout) == rollout_len:
-                    model.put_data(rollout)
-                    rollout = []
-                    break
-
-                e_s_p = e_s
-                mu, std = model.pi(e_s)
+            for t in range(rollout_len):
+                for _ in range(5):
+                    h_in = h_out
+                    ea, h_out = stater.pi(obs, h_in)
+                    if stater.cf > 0.6:
+                        s = stater.state
+                        break
+                    obs, r, done, truncated, info = env.step(a.detach().cpu().numpy())
+                    
+                mu, std = model.pi(s)
                 dist = Normal(mu, std)
                 a = dist.sample()
                 log_prob = dist.log_prob(a)
-                s_prime, r, done, truncated, info = env.step(a.detach().cpu().numpy())
+                obs, r, done, truncated, info = env.step(a.detach().cpu().numpy())
                 r *= 10
+                # print(r*100)
+                s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+                s_prime = torch.tensor(s_prime, dtype=torch.float).to(device)
+
+                rollout.append((s, a, r, s_prime, log_prob, done))
+                if len(rollout) == rollout_len:
+                    model.put_data(rollout)
+                    rollout = []
                 
+                s = s_prime
                 score += r
                 count += 1
+                if done:
+                    break
 
+        
             model.train_net()
-
         if n_epi % print_interval == 0 and n_epi != 0:
             print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score/print_interval, model.optimization_step))
             wandb.log({"episode": n_epi, "avg_score": score/print_interval})  # 记录平均得分到wandb

@@ -177,7 +177,7 @@ def main():
                 a = dist.sample()
                 log_prob = dist.log_prob(a)
                 s_prime, r, done, truncated, info = env.step(a.detach().cpu().numpy())
-                r *= 10
+        
                 score_count += 1
                 score += r
                 count += 1

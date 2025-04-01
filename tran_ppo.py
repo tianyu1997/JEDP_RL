@@ -240,7 +240,6 @@ def main():
                     s_pre = es_model.tran_predictor(torch.tensor(input_queue,dtype=torch.float).to(device), a)
                     a = a.detach().cpu().numpy()
                     s_prime, r, done, truncated, info = env.step(a)
-                    r *= 10
                     # print(r)
                     s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
                     for x in a:

@@ -213,7 +213,7 @@ def main():
                     loss.mean().backward()
                     nn.utils.clip_grad_norm_(es_model.parameters(), 1.0)
                     es_model.optimizer.step()
-                    r = -1000 * loss.item()
+                    r = -loss.item()
 
                     e_rollout.append((old_input, a, r, input_queue, log_prob, done))
                     e_score += r
@@ -239,7 +239,7 @@ def main():
                     s_pre = es_model.tran_predictor(torch.tensor(input_queue,dtype=torch.float).to(device), a)
                     a = a.detach().cpu().numpy()
                     s_prime, r, done, truncated, info = env.step(a)
-                    r *= 10000
+                    r *= 10
                     # print(r)
                     s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
                     for x in a:
@@ -273,8 +273,8 @@ def main():
             es_model.train_net()
 
         if n_epi % print_interval == 0 and n_epi != 0:
-            print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
-            print("                  avg e_score : {:.1f}, e_optmization step: {}".format(e_score/e_score_count, es_model.optimization_step))
+            print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
+            print("                  avg e_score : {:.5f}, e_optmization step: {}".format(e_score/e_score_count, es_model.optimization_step))
             wandb.log({"episode": n_epi, "avg_score": score/score_count, "avg_e_score": e_score/e_score_count})  # 记录平均得分到wandb
             score = 0.0
             e_score = 0.0

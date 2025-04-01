@@ -178,7 +178,7 @@ def main():
 
                 a = a.detach().cpu().numpy()
                 s_prime, r, done, truncated, info = env.step(a)
-                r *= 10000
+                r *= 10
                 # print(r*100)
                 s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
                 for x in a:
@@ -202,7 +202,7 @@ def main():
             model.train_net()
 
         if n_epi % print_interval == 0 and n_epi != 0:
-            print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
+            print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
             wandb.log({"episode": n_epi, "avg_score": score/print_interval})  # 记录平均得分到wandb
             score = 0.0
             score_count = 0

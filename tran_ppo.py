@@ -12,10 +12,10 @@ import wandb  # 导入wandb
 from collections import deque
 
 # Hyperparameters
-learning_rate  = 0.0003
+learning_rate  = 0.0001
 gamma           = 0.9
 lmbda           = 0.9
-eps_clip        = 0.2
+eps_clip        = 0.15
 K_epoch         = 10
 rollout_len    = 3
 buffer_size    = 10
@@ -40,9 +40,18 @@ class PPO(nn.Module):
         self.optimization_step = 0
         self.rollout = []
         self.rollout_len = 3
-
+        self._init_weights()
         # Move model to device
         self.to(device)
+    
+    def _init_weights(self):
+        """Initialize model parameters."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
 
     def pi(self, x):
         x = F.relu(self.fc1(x))
@@ -157,7 +166,8 @@ def main():
     len_deque = l * env.observation_space['desired_goal'].shape[0] + (l-1) * env.action_space.shape[0]
     es_model = PPO(len_deque, env.action_space.shape[0], action_scale=[0.03, 0.03])
     model = PPO(128, env.action_space.shape[0], action_scale=[0.1, 0.1])
-    model.load_state_dict('')
+    # model.load_state_dict('checkpoints/checkpoint_2000.pth')
+    # es_model.load_state_dict('checkpoints/es_checkpoint_2000.pth')
     score = 0.1
     score_count = 0
     e_score = 0
@@ -217,7 +227,7 @@ def main():
                     loss.mean().backward()
                     nn.utils.clip_grad_norm_(es_model.parameters(), 1.0)
                     es_model.optimizer.step()
-                    r = -100*loss.item()
+                    r = -loss.item()
 
                     e_rollout.append((old_input, a, r, input_queue, log_prob, done))
                     e_score += r

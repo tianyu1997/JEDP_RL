@@ -12,10 +12,10 @@ import wandb  # 导入wandb
 from collections import deque
 
 # Hyperparameters
-learning_rate  = 0.0003
+learning_rate  = 0.0001
 gamma           = 0.9
 lmbda           = 0.9
-eps_clip        = 0.2
+eps_clip        = 0.15
 K_epoch         = 10
 rollout_len    = 3
 buffer_size    = 10
@@ -39,8 +39,17 @@ class PPO(nn.Module):
         self.rollout = []
         self.rollout_len = 3
 
+        self._init_weights()
         # Move model to device
         self.to(device)
+
+    def _init_weights(self):
+        """Initialize model parameters."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def pi(self, x):
         x = F.relu(self.fc1(x))
@@ -150,7 +159,7 @@ def main():
     score_count = 0
     print_interval = 20
     rollout = []
-    
+   
     
     for n_epi in range(10000):
         input_queue = deque(maxlen=len_deque)

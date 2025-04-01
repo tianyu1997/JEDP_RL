@@ -11,10 +11,10 @@ import gymnasium as gym
 import wandb  # 导入wandb
 
 # Hyperparameters
-learning_rate  = 0.0003
+learning_rate  = 0.0001
 gamma           = 0.9
 lmbda           = 0.9
-eps_clip        = 0.2
+eps_clip        = 0.15
 K_epoch         = 10
 rollout_len    = 3
 buffer_size    = 10
@@ -35,9 +35,18 @@ class PPO(nn.Module):
         self.fc_v = nn.Linear(128,1)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.optimization_step = 0
-
+        self._init_weights()
         # Move model to device
         self.to(device)
+
+    def _init_weights(self):
+        """Initialize model parameters."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
 
     def pi(self, x):
         action_scale = [0.1, 0.1]
@@ -163,7 +172,7 @@ def main():
                     s = s['desired_goal']-s['achieved_goal']
                     e_s.append(s)
 
-                e_s = torch.tensor(e_s, dtype=torch.float).to(device).view(-1)
+                e_s = torch.tensor(np.array(e_s), dtype=torch.float).to(device).view(-1)
                 if count > 0:
                     rollout.append((e_s_p, a, r, e_s, log_prob, done))
                 if len(rollout) == rollout_len:

@@ -34,8 +34,6 @@ class PPO(nn.Module):
         self.fc_mu = nn.Linear(128,output_dim)
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128, 1)
-        self.fc_a = nn.Linear(output_dim, 128)
-        self.fc_t = nn.Linear(256, 3)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.optimization_step = 0
         self.rollout = []
@@ -55,7 +53,6 @@ class PPO(nn.Module):
         v = self.fc_v(x)
         return v
         
-      
     def put_data(self, transition):
         self.data.append(transition)
         
@@ -181,7 +178,7 @@ def main():
 
                 a = a.detach().cpu().numpy()
                 s_prime, r, done, truncated, info = env.step(a)
-                r *= 1000
+                r *= 10000
                 # print(r*100)
                 s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
                 for x in a:
@@ -189,7 +186,6 @@ def main():
                 for x in s_prime:
                     input_queue.append(x)
             
-
                 rollout.append((old_input, a, r, input_queue, log_prob, done))
                 if len(rollout) == rollout_len:
                     model.put_data(rollout)

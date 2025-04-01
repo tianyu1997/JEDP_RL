@@ -146,7 +146,7 @@ class PPO(nn.Module):
                     self.optimization_step += 1
 
                     # 记录损失到wandb
-                    wandb.log({"loss": loss.mean().item(), "optimization_step": self.optimization_step})
+                    # wandb.log({"loss": loss.mean().item(), "optimization_step": self.optimization_step})
 
         
 def main():
@@ -165,7 +165,7 @@ def main():
     rollout = []
     e_rollout = []
     e_flag = 1
-    e_loss_threshold = 0.02
+    e_loss_threshold = 0.0001
     
     
     for n_epi in range(10000):
@@ -213,7 +213,7 @@ def main():
                     loss.mean().backward()
                     nn.utils.clip_grad_norm_(es_model.parameters(), 1.0)
                     es_model.optimizer.step()
-                    r = -10 * loss.item()
+                    r = -1000 * loss.item()
 
                     e_rollout.append((old_input, a, r, input_queue, log_prob, done))
                     e_score += r
@@ -221,6 +221,7 @@ def main():
                     count += 1
                     if len(e_rollout) == rollout_len:
                         es_model.put_data(e_rollout)
+                        # print(len(es_model.data))
                         e_rollout = []
                         break
                     
@@ -238,7 +239,7 @@ def main():
                     s_pre = es_model.tran_predictor(torch.tensor(input_queue,dtype=torch.float).to(device), a)
                     a = a.detach().cpu().numpy()
                     s_prime, r, done, truncated, info = env.step(a)
-                    r *= 1000
+                    r *= 10000
                     # print(r)
                     s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
                     for x in a:

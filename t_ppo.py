@@ -111,7 +111,7 @@ class PPO(nn.Module):
         return data_with_adv
 
         
-    def train_net(self):
+    def train_net(self, logname):
         if len(self.data) == minibatch_size * buffer_size:
             data = self.make_batch()
             data = self.calc_advantage(data)
@@ -136,7 +136,7 @@ class PPO(nn.Module):
                     self.optimization_step += 1
 
             # 记录损失到wandb
-            wandb.log({"loss": loss.mean().item(), "optimization_step": self.optimization_step})
+            wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
         
 def main():
@@ -199,11 +199,11 @@ def main():
                     break
 
         
-            model.train_net()
+            model.train_net('actor')
 
         if n_epi % print_interval == 0 and n_epi != 0:
             print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
-            wandb.log({"episode": n_epi, "avg_score": score/print_interval})  # 记录平均得分到wandb
+            wandb.log({"episode": n_epi, "avg_score": score/score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb
             score = 0.0
             score_count = 0
 

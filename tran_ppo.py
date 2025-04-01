@@ -166,7 +166,7 @@ def main():
     rollout = []
     e_rollout = []
     e_flag = 1
-    e_loss_threshold = 0.0001
+    e_loss_threshold = 0.00005
     
     
     for n_epi in range(10000):
@@ -276,7 +276,7 @@ def main():
         if n_epi % print_interval == 0 and n_epi != 0:
             print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
             print("                  avg e_score : {:.5f}, e_optmization step: {}".format(e_score/e_score_count, es_model.optimization_step))
-            wandb.log({"episode": n_epi, "avg_score": score/score_count, "avg_e_score": e_score/e_score_count})  # 记录平均得分到wandb
+            wandb.log({"episode": n_epi, "avg_score": score/score_count, "avg_e_score": e_score/e_score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb
             score = 0.0
             e_score = 0.0
             score_count = 0

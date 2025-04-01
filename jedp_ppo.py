@@ -109,7 +109,7 @@ class PPO(nn.Module):
         return data_with_adv
 
         
-    def train_net(self):
+    def train_net(self, logname):
         if len(self.data) == minibatch_size * buffer_size:
             data = self.make_batch()
             data = self.calc_advantage(data)
@@ -134,7 +134,7 @@ class PPO(nn.Module):
                     self.optimization_step += 1
 
                     # 记录损失到wandb
-                    wandb.log({"loss": loss.mean().item(), "optimization_step": self.optimization_step})
+            wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
         
 def main():
@@ -142,6 +142,7 @@ def main():
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     model = PPO(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
     score = 0.0
+    score_count = 0
     print_interval = 20
     rollout = []
     e_a = np.eye(env.action_space.shape[0])*0.01
@@ -177,16 +178,17 @@ def main():
                 log_prob = dist.log_prob(a)
                 s_prime, r, done, truncated, info = env.step(a.detach().cpu().numpy())
                 r *= 10
-                
+                score_count += 1
                 score += r
                 count += 1
 
-            model.train_net()
+            model.train_net('actor')
 
         if n_epi % print_interval == 0 and n_epi != 0:
-            print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score/print_interval, model.optimization_step))
-            wandb.log({"episode": n_epi, "avg_score": score/print_interval})  # 记录平均得分到wandb
+            print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
+            wandb.log({"episode": n_epi, "avg_score": score/score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb
             score = 0.0
+            score_count = 0
 
             # 保存模型checkpoint
         if n_epi % save_interval == 0 and n_epi != 0:

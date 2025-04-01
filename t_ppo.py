@@ -145,7 +145,7 @@ def main():
     l = 5
     len_deque = l * env.observation_space['desired_goal'].shape[0] + (l-1) * env.action_space.shape[0]
     model = PPO(len_deque, env.action_space.shape[0], action_scale=[0.1, 0.1])
-    input_queue = deque(maxlen=len_deque)
+    
     score = 0.0
     score_count = 0
     print_interval = 20
@@ -153,6 +153,7 @@ def main():
     
     
     for n_epi in range(10000):
+        input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()
         s = s['desired_goal']-s['achieved_goal']
         for x in s:
@@ -189,15 +190,12 @@ def main():
                 if len(rollout) == rollout_len:
                     model.put_data(rollout)
                     rollout = []
-                
-                s = s_prime
                 score += r
                 score_count += 1
                 count += 1
                 if done:
                     break
 
-        
             model.train_net('actor')
 
         if n_epi % print_interval == 0 and n_epi != 0:

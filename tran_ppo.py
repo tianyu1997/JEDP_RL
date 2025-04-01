@@ -157,7 +157,7 @@ def main():
     len_deque = l * env.observation_space['desired_goal'].shape[0] + (l-1) * env.action_space.shape[0]
     es_model = PPO(len_deque, env.action_space.shape[0], action_scale=[0.03, 0.03])
     model = PPO(128, env.action_space.shape[0], action_scale=[0.1, 0.1])
-    input_queue = deque(maxlen=len_deque)
+    model.load_state_dict('')
     score = 0.1
     score_count = 0
     e_score = 0
@@ -170,6 +170,8 @@ def main():
     
     
     for n_epi in range(10000):
+        loss_queue = deque(maxlen=l)
+        input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()
         s = s['desired_goal']-s['achieved_goal']
         for x in s:
@@ -206,7 +208,8 @@ def main():
                         input_queue.append(x)
                     
                     loss = F.smooth_l1_loss(s_pre, torch.tensor(s_prime,dtype=torch.float).to(device))
-                    if loss.item() < e_loss_threshold:
+                    loss_queue.append(loss.item())
+                    if np.mean(loss_queue) < e_loss_threshold:
                         e_flag = 0
                     else:
                         e_flag = 1
@@ -214,7 +217,7 @@ def main():
                     loss.mean().backward()
                     nn.utils.clip_grad_norm_(es_model.parameters(), 1.0)
                     es_model.optimizer.step()
-                    r = -loss.item()
+                    r = -100*loss.item()
 
                     e_rollout.append((old_input, a, r, input_queue, log_prob, done))
                     e_score += r
@@ -247,7 +250,8 @@ def main():
                     for x in s_prime:
                         input_queue.append(x)
                     loss = F.smooth_l1_loss(s_pre, torch.tensor(s_prime,dtype=torch.float).to(device))
-                    if loss.item() < e_loss_threshold:
+                    loss_queue.append(loss.item())
+                    if np.mean(loss_queue) < e_loss_threshold:
                         e_flag = 0
                     else:
                         e_flag = 1

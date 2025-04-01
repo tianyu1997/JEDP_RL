@@ -147,7 +147,7 @@ class PPO(nn.Module):
 
                     # 记录损失到wandb
                     
-                    wandb.log({f"{logname}_loss": loss.mean().item(), "{logname}_optimization_step": self.optimization_step})
+            wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
         
 def main():

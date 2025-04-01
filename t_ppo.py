@@ -140,7 +140,7 @@ class PPO(nn.Module):
 
         
 def main():
-    wandb.init(project="JEDP_RL", name='es')  # 初始化wandb项目
+    wandb.init(project="JEDP_RL", name='ppo')  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     l = 5
     len_deque = l * env.observation_space['desired_goal'].shape[0] + (l-1) * env.action_space.shape[0]

@@ -35,7 +35,7 @@ class PPO(nn.Module):
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128, 1)
         self.fc_a = nn.Linear(output_dim, 128)
-        self.fc_t = nn.Linear(256, 3)
+        self.fc_t = nn.Linear(256, 6)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.optimization_step = 0
         self.rollout = []
@@ -157,6 +157,11 @@ class PPO(nn.Module):
                     # 记录损失到wandb
                     
             wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
+    
+def get_input(s):
+    s_d = s['desired_goal']-s['achieved_goal']
+    input = np.concatenate([s['achieved_goal'], s_d])
+    return input
 
         
 def main():
@@ -183,14 +188,14 @@ def main():
         loss_queue = deque(maxlen=l)
         input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()
-        s = s['desired_goal']-s['achieved_goal']
+        s = get_input(s)
         for x in s:
             input_queue.append(x)
         done = False
         while len(input_queue) < len_deque:
             a = 0.05 * env.action_space.sample()
             s_prime, r, done, truncated, info = env.step(a)
-            s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+            s_prime = get_input(s_prime)
             for x in a:
                 input_queue.append(x)
             for x in s_prime:
@@ -211,7 +216,7 @@ def main():
                     s_pre = es_model.tran_predictor(torch.tensor(input_queue,dtype=torch.float).to(device), a)
                     a = a.detach().cpu().numpy()
                     s_prime, r, done, truncated, info = env.step(a)
-                    s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+                    s_prime = get_input(s_prime)
                     for x in a:
                         input_queue.append(x)
                     for x in s_prime:
@@ -254,7 +259,7 @@ def main():
                     a = a.detach().cpu().numpy()
                     s_prime, r, done, truncated, info = env.step(a)
                     # print(r)
-                    s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+                    s_prime = get_input(s_prime)
                     for x in a:
                         input_queue.append(x)
                     for x in s_prime:
@@ -287,6 +292,10 @@ def main():
             es_model.train_net('es')
 
         if n_epi % print_interval == 0 and n_epi != 0:
+            if score_count == 0:
+                score_count += 1
+            if e_score_count == 0:
+                e_score_count += 1
             print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
             print("                  avg e_score : {:.5f}, e_optmization step: {}".format(e_score/e_score_count, es_model.optimization_step))
             wandb.log({"episode": n_epi, "avg_score": score/score_count, "avg_e_score": e_score/e_score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb

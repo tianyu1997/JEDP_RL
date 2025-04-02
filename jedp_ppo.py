@@ -145,11 +145,15 @@ class PPO(nn.Module):
                     # 记录损失到wandb
             wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
-        
+def get_input(s):
+    s_d = s['desired_goal']-s['achieved_goal']
+    input = np.concatenate([s['achieved_goal'], s_d])
+    return input
+
 def main():
     wandb.init(project="JEDP_RL", name='jedp')  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
-    model = PPO(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
+    model = PPO(6, env.action_space.shape[0])
     score = 0.0
     score_count = 0
     print_interval = 20
@@ -158,7 +162,7 @@ def main():
     
     for n_epi in range(10000):
         s, _ = env.reset()
-        s = s['desired_goal']-s['achieved_goal']
+        s = get_input(s)
         s = torch.tensor(s, dtype=torch.float).to(device)
         done = False
         
@@ -169,7 +173,7 @@ def main():
                 for e in e_a:
                     # print(e)
                     s, _, _, truncated, info = env.step(e)
-                    s = s['desired_goal']-s['achieved_goal']
+                    s = get_input(s)
                     e_s.append(s)
 
                 e_s = torch.tensor(np.array(e_s), dtype=torch.float).to(device).view(-1)

@@ -147,7 +147,11 @@ class PPO(nn.Module):
             # 记录损失到wandb
             wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
-        
+def get_input(s):
+    s_d = s['desired_goal']-s['achieved_goal']
+    input = np.concatenate([s['achieved_goal'], s_d])
+    return input
+      
 def main():
     wandb.init(project="JEDP_RL", name='ppo')  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
@@ -164,14 +168,14 @@ def main():
     for n_epi in range(10000):
         input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()
-        s = s['desired_goal']-s['achieved_goal']
+        s = get_input(s)
         for x in s:
             input_queue.append(x)
         done = False
         while len(input_queue) < len_deque:
             a = 0.05 * env.action_space.sample()
             s_prime, r, done, truncated, info = env.step(a)
-            s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+            s_prime = get_input(s_prime)
             for x in a:
                 input_queue.append(x)
             for x in s_prime:
@@ -189,7 +193,7 @@ def main():
                 a = a.detach().cpu().numpy()
                 s_prime, r, done, truncated, info = env.step(a)
                 # print(r*100)
-                s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+                s_prime = get_input(s_prime)
                 for x in a:
                     input_queue.append(x)
                 for x in s_prime:

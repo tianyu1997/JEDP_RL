@@ -138,7 +138,7 @@ class PPO(nn.Module):
 
         
 def main():
-    wandb.init(project="JEDP_RL", name='ppo')  # 初始化wandb项目
+    wandb.init(project="JEDP_RL", name='ppo_1')  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     model = PPO(env.observation_space['desired_goal'].shape[0], env.action_space.shape[0])
     score = 0.0

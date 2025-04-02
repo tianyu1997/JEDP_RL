@@ -4,9 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Normal
-import time
 import numpy as np
-import panda_gym
 import gymnasium as gym
 import wandb  # 导入wandb
 from collections import deque
@@ -153,10 +151,12 @@ def get_input(s):
     return input
       
 def main():
-    wandb.init(project="JEDP_RL", name='ppo')  # 初始化wandb项目
+    name = 'ppo_3'
+    wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
+    env_obs_dim = 6
     l = 5
-    len_deque = l * env.observation_space['desired_goal'].shape[0] + (l-1) * env.action_space.shape[0]
+    len_deque = l * env_obs_dim + (l-1) * env.action_space.shape[0]
     model = PPO(len_deque, env.action_space.shape[0], action_scale=[0.1, 0.1])
     
     score = 0.0
@@ -219,7 +219,7 @@ def main():
 
             # 保存模型checkpoint
         if n_epi % save_interval == 0 and n_epi != 0:
-            torch.save(model.state_dict(), f"checkpoints/ppo_checkpoint_{n_epi}.pth")
+            torch.save(model.state_dict(), f"checkpoints/{name}_checkpoint_{n_epi}.pth")
 
     env.close()
 

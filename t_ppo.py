@@ -153,7 +153,7 @@ def get_input(s):
     return input
       
 def main():
-    name = 'ppo_5'
+    name = 'ppo_10'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     env_obs_dim = 6
@@ -165,7 +165,8 @@ def main():
     score_count = 0
     print_interval = 20
     rollout = []
-   
+    done_queue = deque(maxlen=50)
+    len_queue = deque(maxlen=50)
     
     for n_epi in range(10000):
         input_queue = deque(maxlen=len_deque)
@@ -213,9 +214,11 @@ def main():
 
             model.train_net('actor')
 
+        done_queue.append(int(done))
+        len_queue.append(count)
         if n_epi % print_interval == 0 and n_epi != 0:
-            print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
-            wandb.log({"episode": n_epi, "avg_score": score/score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb
+            print("# of episode :{}, SR: {:.2f}, avg score : {:.5f}, ave_len:{:.2f}, optmization step: {}".format(n_epi, np.mean(done_queue), np.mean(len_queue), score/score_count, model.optimization_step))
+            wandb.log({"episode": n_epi, "success_rate:":np.mean(done_queue), "ave_len":np.mean(len_queue), "avg_score": score/score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb
             score = 0.0
             score_count = 0
 

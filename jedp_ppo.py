@@ -183,6 +183,8 @@ def main():
                     model.put_data(rollout)
                     rollout = []
                     break
+                if done:
+                    break
 
                 e_s_p = e_s
                 mu, std = model.pi(e_s)
@@ -190,7 +192,7 @@ def main():
                 a = dist.sample()
                 log_prob = dist.log_prob(a)
                 s_prime, r, done, truncated, info = env.step(a.detach().cpu().numpy())
-        
+
                 score_count += 1
                 score += r
                 count += 1

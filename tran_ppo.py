@@ -181,7 +181,7 @@ def main():
     rollout = []
     e_rollout = []
     e_flag = 1
-    e_loss_threshold = 0.00005
+    e_loss_threshold = 0.000075
     
     
     for n_epi in range(10000):

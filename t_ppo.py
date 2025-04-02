@@ -10,17 +10,7 @@ import panda_gym
 import gymnasium as gym
 import wandb  # 导入wandb
 from collections import deque
-
-# Hyperparameters
-learning_rate  = 0.0001
-gamma           = 0.9
-lmbda           = 0.9
-eps_clip        = 0.15
-K_epoch         = 10
-rollout_len    = 3
-buffer_size    = 10
-minibatch_size = 32
-save_interval  = 1000
+from config import *
 
 # Detect device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -147,23 +137,17 @@ class PPO(nn.Module):
             # 记录损失到wandb
             wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
-def get_input(s):
-    s_d = s['desired_goal']-s['achieved_goal']
-    input = np.concatenate([s['achieved_goal'], s_d])
-    return input
+
       
 def main():
     name = 'ppo_5'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
-    env_obs_dim = 6
-    l = 5
-    len_deque = l * env_obs_dim + (l-1) * env.action_space.shape[0]
+    len_deque = time_length * env_obs_dim + (time_length-1) * env.action_space.shape[0]
     model = PPO(len_deque, env.action_space.shape[0], action_scale=[0.1, 0.1])
     
     score = 0.0
     score_count = 0
-    print_interval = 20
     rollout = []
     done_queue = deque(maxlen=50)
     len_queue = deque(maxlen=50)

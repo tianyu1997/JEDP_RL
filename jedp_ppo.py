@@ -163,7 +163,7 @@ def main():
                     s = s['desired_goal']-s['achieved_goal']
                     e_s.append(s)
 
-                e_s = torch.tensor(e_s, dtype=torch.float).to(device).view(-1)
+                e_s = torch.tensor(np.array(e_s), dtype=torch.float).to(device).view(-1)
                 if count > 0:
                     rollout.append((e_s_p, a, r, e_s, log_prob, done))
                 if len(rollout) == rollout_len:

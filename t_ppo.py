@@ -4,7 +4,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Normal
+import time
 import numpy as np
+import panda_gym
 import gymnasium as gym
 import wandb  # 导入wandb
 from collections import deque
@@ -151,7 +153,7 @@ def get_input(s):
     return input
       
 def main():
-    name = 'ppo_3'
+    name = 'ppo_5'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     env_obs_dim = 6

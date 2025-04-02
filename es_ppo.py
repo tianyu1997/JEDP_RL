@@ -191,7 +191,7 @@ def get_input(s):
 
         
 def main():
-    name = 'es_3'
+    name = 'es_5'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     env_obs_dim = 6

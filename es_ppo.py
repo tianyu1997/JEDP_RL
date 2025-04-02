@@ -192,7 +192,7 @@ def get_input(s):
 
         
 def main():
-    name = 'es_10'
+    name = 'es_5_new'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     env_obs_dim = 6
@@ -209,7 +209,7 @@ def main():
     rollout = []
     e_rollout = []
     e_flag = 1
-    e_loss_threshold = 0.00001
+    e_loss_threshold = 0.00005
     done_queue = deque(maxlen=50)
     len_queue = deque(maxlen=50)
     
@@ -231,7 +231,7 @@ def main():
                 input_queue.append(x)
 
         count = 0
-        while count < 300 and not done:
+        while count < 200 and not done:
             while True:
                 old_input = input_queue.copy()
                 if e_flag:
@@ -293,7 +293,7 @@ def main():
                     for x in s_prime:
                         input_queue.append(x)
                     loss = F.smooth_l1_loss(s_pre, torch.tensor(s_prime,dtype=torch.float).to(device))
-                    loss_queue.append(loss.item())
+                    loss_queue.append(loss.mean().item())
                     if np.mean(loss_queue) < e_loss_threshold:
                         e_flag = 0
                     else:
@@ -302,9 +302,10 @@ def main():
                     loss.mean().backward()
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     model.optimizer.step()
-    
+
+                    r += -100*loss.mean().item()
                     rollout.append((old_input, a, r, input_queue, log_prob, done))
-                    score += r
+                    score += r 
                     score_count += 1
                     count += 1
                     if len(rollout) == rollout_len:
@@ -325,7 +326,7 @@ def main():
                 score_count += 1
             if e_score_count == 0:
                 e_score_count += 1
-            print("# of episode :{}, SR: {:.2f}, avg score : {:.5f}, ave_len:{:.2f}, optmization step: {}".format(n_epi, np.mean(done_queue), np.mean(len_queue), score/score_count, model.optimization_step))
+            print("# of episode :{}, SR: {:.2f}, avg score : {:.5f}, ave_len:{:.2f}, optmization step: {}".format(n_epi, np.mean(done_queue), score/score_count, np.mean(len_queue), model.optimization_step))
             print("                  avg e_score : {:.5f}, e_optmization step: {}".format(e_score/e_score_count, model.explorer_optimization_step))
             wandb.log({"episode": n_epi, "success_rate:":np.mean(done_queue), "ave_len":np.mean(len_queue), "avg_score": score/score_count, "avg_e_score": e_score/e_score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb
             score = 0.0

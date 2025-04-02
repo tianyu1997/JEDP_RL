@@ -26,7 +26,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class PPO_LSTM(nn.Module):
     def __init__(self, input_dim=3, output_dim=1):
-        super(PPO, self).__init__()
+        super(PPO_LSTM, self).__init__()
         self.data = []
         
         self.fc1   = nn.Linear(input_dim,128)
@@ -44,19 +44,20 @@ class PPO_LSTM(nn.Module):
 
     def s(self, x, hidden):
         x = F.relu(self.fc1(x))
+        x = x.view(-1, 1, 128)
         x, hidden = self.lstm(x, hidden)
-        self.state = self.fc_s(x)
-        self.cf = self.fc_cf(x)
+        self.state = self.fc_s(x).squeeze()
+        self.cf = F.sigmoid(self.fc_cf(x)).squeeze()
         return self.state, hidden
 
-    def pi(self, x):
-        action_scale = [0.1, 0.1]
+    def pi(self, x, hidden):
+        action_scale = [0.01, 0.01]
         x, hidden = self.s(x, hidden)
         mu = action_scale[0] * torch.tanh(self.fc_mu(x))
         std = action_scale[1] * F.softplus(self.fc_std(x))
         return mu, std, hidden
     
-    def v(self, x):
+    def v(self, x, hidden):
         x, hidden = self.s(x, hidden)
         v = self.fc_v(x)
         return v, hidden
@@ -78,13 +79,13 @@ class PPO_LSTM(nn.Module):
                 
                     s_lst.append(s.detach().cpu().numpy())
                     a_lst.append(a.detach().cpu().numpy())
-                    r_lst.append([r])
-                    s_prime_lst.append(s_prime.detach().cpu().numpy())
+                    r_lst.append(r.squeeze().detach().cpu().numpy())
+                    s_prime_lst.append(s_prime)
                     prob_a_lst.append(prob_a.detach().cpu().numpy())
                     done_mask = 0 if done else 1
                     done_lst.append([done_mask])
-                    h_in_lst.append(h_in.detach().cpu().numpy())
-                    h_out_lst.append(h_out.detach().cpu().numpy())
+                    h_in_lst.append(h_in)
+                    h_out_lst.append(h_out)
 
                 s_batch.append(s_lst)
                 a_batch.append(a_lst)
@@ -92,14 +93,14 @@ class PPO_LSTM(nn.Module):
                 s_prime_batch.append(s_prime_lst)
                 prob_a_batch.append(prob_a_lst)
                 done_batch.append(done_lst)
-                h_in_batch.append(h_in_lst)
-                h_out_batch.append(h_out_lst)
+                h_in_batch.append(h_in_lst[0])
+                h_out_batch.append(h_out_lst[0])
 
                     
             mini_batch = torch.tensor(np.array(s_batch), dtype=torch.float).to(device), torch.tensor(np.array(a_batch), dtype=torch.float).to(device), \
                           torch.tensor(np.array(r_batch), dtype=torch.float).to(device), torch.tensor(np.array(s_prime_batch), dtype=torch.float).to(device), \
                           torch.tensor(np.array(done_batch), dtype=torch.float).to(device), torch.tensor(np.array(prob_a_batch), dtype=torch.float).to(device), \
-                          torch.tensor(np.array(h_in_batch), dtype=torch.float).to(device), torch.tensor(np.array(h_out_batch), dtype=torch.float).to(device)
+                          h_in_batch, h_out_batch
             data.append(mini_batch)
 
         return data
@@ -109,7 +110,7 @@ class PPO_LSTM(nn.Module):
         for mini_batch in data:
             s, a, r, s_prime, done_mask, old_log_prob, h_in, h_out = mini_batch
             with torch.no_grad():
-                vs = self.v(s_prime, h_out)
+                vs, _ = self.v(s_prime, h_out)
                 td_target = r + gamma * vs * done_mask
                 delta = td_target - vs
             delta = delta.cpu().numpy()
@@ -135,14 +136,16 @@ class PPO_LSTM(nn.Module):
                 for mini_batch in data:
                     s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage, h_in, h_out = mini_batch
 
-                    mu, std = self.pi(s, h_in)
+                    mu, std, _ = self.pi(s, h_in)
                     dist = Normal(mu, std)
                     log_prob = dist.log_prob(a)
                     ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
 
                     surr1 = ratio * advantage
                     surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage
-                    loss = -torch.min(surr1, surr2) + F.smooth_l1_loss(self.v(s) , td_target)
+                    actor_loss = -torch.min(surr1, surr2)
+                    critic_loss = F.smooth_l1_loss(self.v(s) , td_target)
+                    loss =  actor_loss + critic_loss
 
                     self.optimizer.zero_grad()
                     loss.mean().backward()
@@ -151,7 +154,7 @@ class PPO_LSTM(nn.Module):
                     self.optimization_step += 1
 
                     # 记录损失到wandb
-                    wandb.log({"loss": loss.mean().item(), "optimization_step": self.optimization_step})
+                    wandb.log({"stater_actor_loss": actor_loss.mean().item(), "stater_critic_loss": critic_loss.mean().item(), "optimization_step": self.optimization_step})
 
 
 class PPO(nn.Module):
@@ -255,7 +258,9 @@ class PPO(nn.Module):
 
                     surr1 = ratio * advantage
                     surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage
-                    loss = -torch.min(surr1, surr2) + F.smooth_l1_loss(self.v(s) , td_target)
+                    actor_loss = -torch.min(surr1, surr2)
+                    critic_loss = F.smooth_l1_loss(self.v(s) , td_target)
+                    loss =  actor_loss + critic_loss
 
                     self.optimizer.zero_grad()
                     loss.mean().backward()
@@ -264,7 +269,7 @@ class PPO(nn.Module):
                     self.optimization_step += 1
 
                     # 记录损失到wandb
-                    wandb.log({"loss": loss.mean().item(), "optimization_step": self.optimization_step})
+                    wandb.log({"actor_loss": actor_loss.mean().item(), "critic_loss": critic_loss.mean().item(), "optimization_step": self.optimization_step})
 
         
 def main():
@@ -275,9 +280,10 @@ def main():
     score = 0.0
     print_interval = 20
     rollout = []
+    ea_rollout = []
     
     for n_epi in range(10000):
-        h_out = (torch.zeros([1, 1, 128], dtype=torch.float), torch.zeros([1, 1, 128], dtype=torch.float))
+        h_out = (torch.zeros([1, 1, 128], dtype=torch.float).to(device), torch.zeros([1, 1, 128], dtype=torch.float).to(device))
         obs, _ = env.reset()
         obs = obs['desired_goal']-obs['achieved_goal']
         obs = torch.tensor(obs, dtype=torch.float).to(device)
@@ -286,26 +292,41 @@ def main():
         count = 0
         while count < 200 and not done:
             for t in range(rollout_len):
-                for _ in range(5):
+                for j in range(5):
                     h_in = h_out
-                    ea, h_out = stater.pi(obs, h_in)
-                    if stater.cf > 0.6:
-                        s = stater.state
-                        break
-                    obs, r, done, truncated, info = env.step(a.detach().cpu().numpy())
+                    mu, std, h_out = stater.pi(obs, h_in)
+                    dist = Normal(mu, std)
+                    ea = dist.sample()
+                    log_prob = dist.log_prob(ea)
                     
+                    if stater.cf > 0.6:
+                        break
+                    obs_prime, r, done, truncated, info = env.step(ea.detach().cpu().numpy())
+                    obs_prime = obs_prime['desired_goal']-obs_prime['achieved_goal']
+                    ea_rollout.append([obs, ea, stater.cf, obs_prime, log_prob, done, h_in, h_out])
+                    obs = obs_prime
+                    obs = torch.tensor(obs, dtype=torch.float).to(device)
+
+                s = stater.state
                 mu, std = model.pi(s)
+                print([count, stater.cf])
                 dist = Normal(mu, std)
                 a = dist.sample()
                 log_prob = dist.log_prob(a)
                 obs, r, done, truncated, info = env.step(a.detach().cpu().numpy())
+                for i, rl in enumerate(ea_rollout):
+                    rl[2] += (r-0.1)*stater.cf - i/10
+
+               
+                obs = obs['desired_goal']-obs['achieved_goal']
+                obs = torch.tensor(obs, dtype=torch.float).to(device)
+                s_prime, h_out = stater.s(obs, h_out)
                 r *= 10
-                # print(r*100)
-                s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
-                s_prime = torch.tensor(s_prime, dtype=torch.float).to(device)
 
                 rollout.append((s, a, r, s_prime, log_prob, done))
                 if len(rollout) == rollout_len:
+                    stater.put_data(ea_rollout)
+                    ea_rollout = []
                     model.put_data(rollout)
                     rollout = []
                 
@@ -315,7 +336,7 @@ def main():
                 if done:
                     break
 
-        
+            stater.train_net()
             model.train_net()
         if n_epi % print_interval == 0 and n_epi != 0:
             print("# of episode :{}, avg score : {:.1f}, optmization step: {}".format(n_epi, score/print_interval, model.optimization_step))

@@ -12,10 +12,10 @@ import wandb  # 导入wandb
 from collections import deque
 
 # Hyperparameters
-learning_rate  = 0.0003
+learning_rate  = 0.0001
 gamma           = 0.9
 lmbda           = 0.9
-eps_clip        = 0.2
+eps_clip        = 0.15
 K_epoch         = 10
 rollout_len    = 3
 buffer_size    = 10
@@ -35,14 +35,23 @@ class PPO(nn.Module):
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128, 1)
         self.fc_a = nn.Linear(output_dim, 128)
-        self.fc_t = nn.Linear(256, 3)
+        self.fc_t = nn.Linear(256, 6)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.optimization_step = 0
         self.rollout = []
         self.rollout_len = 3
-
+        self._init_weights()
         # Move model to device
         self.to(device)
+    
+    def _init_weights(self):
+        """Initialize model parameters."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
 
     def pi(self, x):
         x = F.relu(self.fc1(x))
@@ -148,6 +157,11 @@ class PPO(nn.Module):
                     # 记录损失到wandb
                     
             wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
+    
+def get_input(s):
+    s_d = s['desired_goal']-s['achieved_goal']
+    input = np.concatenate([s['achieved_goal'], s_d])
+    return input
 
         
 def main():
@@ -157,7 +171,8 @@ def main():
     len_deque = l * env.observation_space['desired_goal'].shape[0] + (l-1) * env.action_space.shape[0]
     es_model = PPO(len_deque, env.action_space.shape[0], action_scale=[0.03, 0.03])
     model = PPO(128, env.action_space.shape[0], action_scale=[0.1, 0.1])
-    input_queue = deque(maxlen=len_deque)
+    # model.load_state_dict('checkpoints/checkpoint_2000.pth')
+    # es_model.load_state_dict('checkpoints/es_checkpoint_2000.pth')
     score = 0.1
     score_count = 0
     e_score = 0
@@ -170,15 +185,17 @@ def main():
     
     
     for n_epi in range(10000):
+        loss_queue = deque(maxlen=l)
+        input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()
-        s = s['desired_goal']-s['achieved_goal']
+        s = get_input(s)
         for x in s:
             input_queue.append(x)
         done = False
         while len(input_queue) < len_deque:
             a = 0.05 * env.action_space.sample()
             s_prime, r, done, truncated, info = env.step(a)
-            s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+            s_prime = get_input(s_prime)
             for x in a:
                 input_queue.append(x)
             for x in s_prime:
@@ -199,14 +216,15 @@ def main():
                     s_pre = es_model.tran_predictor(torch.tensor(input_queue,dtype=torch.float).to(device), a)
                     a = a.detach().cpu().numpy()
                     s_prime, r, done, truncated, info = env.step(a)
-                    s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+                    s_prime = get_input(s_prime)
                     for x in a:
                         input_queue.append(x)
                     for x in s_prime:
                         input_queue.append(x)
                     
                     loss = F.smooth_l1_loss(s_pre, torch.tensor(s_prime,dtype=torch.float).to(device))
-                    if loss.item() < e_loss_threshold:
+                    loss_queue.append(loss.item())
+                    if np.mean(loss_queue) < e_loss_threshold:
                         e_flag = 0
                     else:
                         e_flag = 1
@@ -241,13 +259,14 @@ def main():
                     a = a.detach().cpu().numpy()
                     s_prime, r, done, truncated, info = env.step(a)
                     # print(r)
-                    s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+                    s_prime = get_input(s_prime)
                     for x in a:
                         input_queue.append(x)
                     for x in s_prime:
                         input_queue.append(x)
                     loss = F.smooth_l1_loss(s_pre, torch.tensor(s_prime,dtype=torch.float).to(device))
-                    if loss.item() < e_loss_threshold:
+                    loss_queue.append(loss.item())
+                    if np.mean(loss_queue) < e_loss_threshold:
                         e_flag = 0
                     else:
                         e_flag = 1
@@ -273,6 +292,10 @@ def main():
             es_model.train_net('es')
 
         if n_epi % print_interval == 0 and n_epi != 0:
+            if score_count == 0:
+                score_count += 1
+            if e_score_count == 0:
+                e_score_count += 1
             print("# of episode :{}, avg score : {:.5f}, optmization step: {}".format(n_epi, score/score_count, model.optimization_step))
             print("                  avg e_score : {:.5f}, e_optmization step: {}".format(e_score/e_score_count, es_model.optimization_step))
             wandb.log({"episode": n_epi, "avg_score": score/score_count, "avg_e_score": e_score/e_score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb

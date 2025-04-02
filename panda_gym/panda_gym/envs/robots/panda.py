@@ -123,8 +123,10 @@ class Panda(PyBulletRobot):
 
     def set_joint_neutral(self) -> None:
         """Set the robot to its neutral pose."""
-        joint = np.random.uniform(-3, 3, 7)
-        self.set_joint_angles(joint)
+        # joint = np.random.uniform(-0.5, 0.5, 7)
+        # joint += self.neutral_joint_values[:7]
+
+        self.set_joint_angles(self.neutral_joint_values[:7])
 
     
 

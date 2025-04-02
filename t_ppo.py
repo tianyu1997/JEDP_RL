@@ -12,10 +12,10 @@ import wandb  # 导入wandb
 from collections import deque
 
 # Hyperparameters
-learning_rate  = 0.0003
+learning_rate  = 0.0001
 gamma           = 0.9
 lmbda           = 0.9
-eps_clip        = 0.2
+eps_clip        = 0.15
 K_epoch         = 10
 rollout_len    = 3
 buffer_size    = 10
@@ -39,8 +39,17 @@ class PPO(nn.Module):
         self.rollout = []
         self.rollout_len = 3
 
+        self._init_weights()
         # Move model to device
         self.to(device)
+
+    def _init_weights(self):
+        """Initialize model parameters."""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_uniform_(m.weight, nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
     def pi(self, x):
         x = F.relu(self.fc1(x))
@@ -138,30 +147,35 @@ class PPO(nn.Module):
             # 记录损失到wandb
             wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
-        
+def get_input(s):
+    s_d = s['desired_goal']-s['achieved_goal']
+    input = np.concatenate([s['achieved_goal'], s_d])
+    return input
+      
 def main():
     wandb.init(project="JEDP_RL", name='ppo')  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     l = 5
     len_deque = l * env.observation_space['desired_goal'].shape[0] + (l-1) * env.action_space.shape[0]
     model = PPO(len_deque, env.action_space.shape[0], action_scale=[0.1, 0.1])
-    input_queue = deque(maxlen=len_deque)
+    
     score = 0.0
     score_count = 0
     print_interval = 20
     rollout = []
-    
+   
     
     for n_epi in range(10000):
+        input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()
-        s = s['desired_goal']-s['achieved_goal']
+        s = get_input(s)
         for x in s:
             input_queue.append(x)
         done = False
         while len(input_queue) < len_deque:
             a = 0.05 * env.action_space.sample()
             s_prime, r, done, truncated, info = env.step(a)
-            s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+            s_prime = get_input(s_prime)
             for x in a:
                 input_queue.append(x)
             for x in s_prime:
@@ -179,7 +193,7 @@ def main():
                 a = a.detach().cpu().numpy()
                 s_prime, r, done, truncated, info = env.step(a)
                 # print(r*100)
-                s_prime = s_prime['desired_goal']-s_prime['achieved_goal']
+                s_prime = get_input(s_prime)
                 for x in a:
                     input_queue.append(x)
                 for x in s_prime:
@@ -189,15 +203,12 @@ def main():
                 if len(rollout) == rollout_len:
                     model.put_data(rollout)
                     rollout = []
-                
-                s = s_prime
                 score += r
                 score_count += 1
                 count += 1
                 if done:
                     break
 
-        
             model.train_net('actor')
 
         if n_epi % print_interval == 0 and n_epi != 0:

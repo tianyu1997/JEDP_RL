@@ -306,6 +306,7 @@ def main():
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     model.optimizer.step()
 
+                    r += -100*loss.mean().item()
                     rollout.append((old_input, a, r, input_queue, log_prob, done))
                     score += r 
                     score_count += 1

@@ -188,7 +188,7 @@ def main():
     model = PPO(env_obs_dim, env.action_space.shape[0], time_length=time_length, action_scale=[0.1, 0.1], exploration_action_scale=[0.03, 0.03])
     
     # model.load_state_dict('checkpoints/checkpoint_2000.pth')
-    score = 0.1
+    score = 0.0
     score_count = 0
     e_score = 0
     e_score_count = 0

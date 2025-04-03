@@ -133,6 +133,7 @@ class PPO(nn.Module):
                     s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage = mini_batch
 
                     mu, std = self.pi(s)
+                    std += 0.00000000001
                     dist = Normal(mu, std)
                     log_prob = dist.log_prob(a)
                     ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
@@ -153,6 +154,7 @@ class PPO(nn.Module):
 
       
 def main():
+    set_seed(seed)  # 设置随机种子`
     name = f'ppo_l_0.5_{minibatch_size}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
@@ -186,6 +188,7 @@ def main():
             for t in range(rollout_len):
                 old_input = input_queue.copy()
                 mu, std = model.pi(torch.tensor(input_queue,dtype=torch.float).to(device))
+                std += 0.00000001
                 dist = Normal(mu, std)
                 a = dist.sample()
                 log_prob = dist.log_prob(a)

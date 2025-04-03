@@ -20,7 +20,11 @@ class PPO(nn.Module):
         super(PPO, self).__init__()
         self.data = []
         self.action_scale = action_scale
-        self.fc1   = nn.Linear(input_dim,128)
+        self.fc1   = nn.Sequential(
+            nn.Linear(input_dim,128),
+            nn.Linear(128,256),
+            nn.Linear(256,128)
+        )
         self.fc_mu = nn.Linear(128,output_dim)
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128, 1)
@@ -120,6 +124,7 @@ class PPO(nn.Module):
                     s, a, r, s_prime, done_mask, old_log_prob, td_target, advantage = mini_batch
 
                     mu, std = self.pi(s)
+                    std = torch.clamp(std, min=1e-8)  # 防止std为0
                     dist = Normal(mu, std)
                     log_prob = dist.log_prob(a)
                     ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
@@ -140,6 +145,7 @@ class PPO(nn.Module):
 
       
 def main():
+    set_seed(seed)  # 设置随机种子
     name = f'ppo_0.5_{minibatch_size}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")

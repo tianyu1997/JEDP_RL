@@ -23,7 +23,11 @@ class PPO(nn.Module):
         self.action_scale = action_scale
         self.exploration_action_scale = exploration_action_scale
         input_dim = time_length * obs_dim + (time_length-1) * action_dim
-        self.fc1   = nn.Linear(input_dim,128)
+        self.fc1   = nn.Sequential(
+            nn.Linear(input_dim,128),
+            nn.Linear(128,256),
+            nn.Linear(256,128)
+        )
         self.fc_mu = nn.Linear(128,action_dim)
         self.es_mu = nn.Linear(128,action_dim)
         self.fc_std  = nn.Linear(128,action_dim)
@@ -180,6 +184,7 @@ class PPO(nn.Module):
 
         
 def main():
+    set_seed(seed)  # 设置随机种子
     name = f'es_0.5_{minibatch_size}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")

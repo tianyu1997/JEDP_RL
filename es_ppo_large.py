@@ -11,6 +11,8 @@ import gymnasium as gym
 import wandb  # 导入wandb
 from collections import deque
 from config import *
+import random
+
 
 
 # Detect device
@@ -184,6 +186,7 @@ class PPO(nn.Module):
                     else:
                         mu, std = self.es_pi(s)
                         critic_loss = F.smooth_l1_loss(self.es_v(s) , td_target)
+                    std += 1e-8  # to avoid std=0
                     dist = Normal(mu, std)
                     log_prob = dist.log_prob(a)
                     ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
@@ -211,6 +214,7 @@ class PPO(nn.Module):
 
         
 def main():
+    set_seed(seed)  # 设置随机种子
     name = f'es_l_0.5_{minibatch_size}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")

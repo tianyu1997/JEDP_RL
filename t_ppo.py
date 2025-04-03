@@ -140,7 +140,7 @@ class PPO(nn.Module):
 
       
 def main():
-    name = 'ppo_5'
+    name = f'ppo_0.5_{minibatch_size}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     len_deque = time_length * env_obs_dim + (time_length-1) * env.action_space.shape[0]
@@ -209,7 +209,8 @@ def main():
             # 保存模型checkpoint
         if n_epi % save_interval == 0 and n_epi != 0:
             torch.save(model.state_dict(), f"checkpoints/{name}_checkpoint_{n_epi}.pth")
-
+            
+    torch.save(model.state_dict(), f"checkpoints/{name}_checkpoint_{n_epi}.pth")
     env.close()
 
 if __name__ == '__main__':

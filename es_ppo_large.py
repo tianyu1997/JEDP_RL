@@ -13,7 +13,6 @@ from collections import deque
 from config import *
 
 
-
 # Detect device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -24,15 +23,46 @@ class PPO(nn.Module):
         self.action_scale = action_scale
         self.exploration_action_scale = exploration_action_scale
         input_dim = time_length * obs_dim + (time_length-1) * action_dim
-        self.fc1   = nn.Linear(input_dim,128)
-        self.fc_mu = nn.Linear(128,action_dim)
-        self.es_mu = nn.Linear(128,action_dim)
-        self.fc_std  = nn.Linear(128,action_dim)
-        self.es_std = nn.Linear(128,action_dim)
-        self.fc_v = nn.Linear(128, 1)
-        self.fc_es_v = nn.Linear(128, 1)
-        self.fc_a = nn.Linear(action_dim, 128)
-        self.fc_t = nn.Linear(256, obs_dim)
+        self.fc1   = nn.Sequential(
+            nn.Linear(input_dim,128),
+            nn.Linear(128,256),
+            nn.Linear(256,512)
+        )
+
+        self.fc_mu = nn.Sequential(
+            nn.Linear(512,128),
+            nn.Linear(128,action_dim),
+        )
+        self.es_mu = nn.Sequential(
+            nn.Linear(512,128),
+            nn.Linear(128,action_dim),
+        )
+        self.fc_std  = nn.Sequential(
+            nn.Linear(512,128),
+            nn.Linear(128,action_dim),
+        )
+        self.es_std = nn.Sequential(
+            nn.Linear(512,128),
+            nn.Linear(128,action_dim),
+        )
+        self.fc_v = nn.Sequential(
+            nn.Linear(512,128),
+            nn.Linear(128,1),
+        )
+        self.fc_es_v = nn.Sequential(
+            nn.Linear(512,128),
+            nn.Linear(128,1),
+        )
+        self.fc_a = nn.Sequential(
+            nn.Linear(action_dim,128),
+            nn.Linear(128,256),
+            nn.Linear(256,512)
+        )
+        self.fc_t = nn.Sequential(
+            nn.Linear(1024,512),
+            nn.Linear(512,128),
+            nn.Linear(128,obs_dim),
+        )
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.optimization_step = 0
         self.explorer_optimization_step = 0
@@ -179,27 +209,26 @@ class PPO(nn.Module):
             else:
                 wandb.log({f"{name}_loss": loss.mean().item(), f"{name}_optimization_step": self.explorer_optimization_step})
 
-    
-
+        
 def main():
-    name = 'es_5_new'
+    name = f'es_l_0.5_{minibatch_size}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
+    
     len_deque = time_length * env_obs_dim + (time_length-1) * env.action_space.shape[0]
     model = PPO(env_obs_dim, env.action_space.shape[0], time_length=time_length, action_scale=[0.1, 0.1], exploration_action_scale=[0.03, 0.03])
     
     # model.load_state_dict('checkpoints/checkpoint_2000.pth')
-    score = 0.1
+    score = 0.0
     score_count = 0
     e_score = 0
     e_score_count = 0
-    
     rollout = []
     e_rollout = []
     e_flag = 1
-    e_loss_threshold = 0.00005
     done_queue = deque(maxlen=50)
     len_queue = deque(maxlen=50)
+    
     
     for n_epi in range(10000):
         loss_queue = deque(maxlen=time_length)
@@ -241,7 +270,7 @@ def main():
                     loss = F.smooth_l1_loss(s_pre, torch.tensor(s_prime,dtype=torch.float).to(device))
                     loss_queue.append(loss.item())
                     
-                    if np.mean(loss_queue) < e_loss_threshold:
+                    if np.mean(loss_queue) < loss_threshold:
                         e_flag = 0
                     else:
                         e_flag = 1
@@ -282,7 +311,7 @@ def main():
                         input_queue.append(x)
                     loss = F.smooth_l1_loss(s_pre, torch.tensor(s_prime,dtype=torch.float).to(device))
                     loss_queue.append(loss.mean().item())
-                    if np.mean(loss_queue) < e_loss_threshold:
+                    if np.mean(loss_queue) < loss_threshold:
                         e_flag = 0
                     else:
                         e_flag = 1
@@ -291,7 +320,6 @@ def main():
                     nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                     model.optimizer.step()
 
-                    r += -100*loss.mean().item()
                     rollout.append((old_input, a, r, input_queue, log_prob, done))
                     score += r 
                     score_count += 1
@@ -326,6 +354,7 @@ def main():
         if n_epi % save_interval == 0 and n_epi != 0:
             torch.save(model.state_dict(), f"checkpoints/{name}_checkpoint_{n_epi}.pth")
 
+    torch.save(model.state_dict(), f"checkpoints/{name}_checkpoint_{n_epi}.pth")
     env.close()
 
 if __name__ == '__main__':

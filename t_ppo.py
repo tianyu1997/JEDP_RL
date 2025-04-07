@@ -11,6 +11,7 @@ import gymnasium as gym
 import wandb  # 导入wandb
 from collections import deque
 from config import *
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
 
 # Detect device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,6 +30,7 @@ class PPO(nn.Module):
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        self.scheduler = LinearLR(self.optimizer, T_max=100)
         self.optimization_step = 0
         self.rollout = []
         self.rollout_len = 3
@@ -137,16 +139,18 @@ class PPO(nn.Module):
                     loss.mean().backward()
                     nn.utils.clip_grad_norm_(self.parameters(), 1.0)
                     self.optimizer.step()
+                    
                     self.optimization_step += 1
 
             # 记录损失到wandb
+            self.scheduler.step()
             wandb.log({f"{logname}_loss": loss.mean().item(), f"{logname}_optimization_step": self.optimization_step})
 
 
       
 def main():
     set_seed(seed)  # 设置随机种子
-    name = f'ppo_0.5_{minibatch_size}'
+    name = f'ppo_3_{minibatch_size}_{seed}_linearLR'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     len_deque = time_length * env_obs_dim + (time_length-1) * env.action_space.shape[0]
@@ -158,7 +162,7 @@ def main():
     done_queue = deque(maxlen=50)
     len_queue = deque(maxlen=50)
     
-    for n_epi in range(10000):
+    for n_epi in range(epoisodes):
         input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()
         s = get_input(s)

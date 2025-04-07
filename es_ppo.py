@@ -11,6 +11,7 @@ import gymnasium as gym
 import wandb  # 导入wandb
 from collections import deque
 from config import *
+from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR
 
 
 # Detect device
@@ -37,6 +38,7 @@ class PPO(nn.Module):
         self.fc_a = nn.Linear(action_dim, 128)
         self.fc_t = nn.Linear(256, obs_dim)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        self.scheduler = LinearLR(self.optimizer, T_max=100)
         self.optimization_step = 0
         self.explorer_optimization_step = 0
 
@@ -158,25 +160,28 @@ class PPO(nn.Module):
                         mu, std = self.es_pi(s)
                         critic_loss = F.smooth_l1_loss(self.es_v(s) , td_target)
                     dist = Normal(mu, std)
+                    entropy = dist.entropy()
                     log_prob = dist.log_prob(a)
                     ratio = torch.exp(log_prob - old_log_prob)  # a/b == exp(log(a)-log(b))
 
                     surr1 = ratio * advantage
                     surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage
                     actor_loss = -torch.min(surr1, surr2)
-                    loss =  actor_loss + critic_loss
+                    loss =  actor_loss + 0.5 * critic_loss + 0.01 * entropy.mean() 
 
                     self.optimizer.zero_grad()
                     loss.mean().backward()
-                    nn.utils.clip_grad_norm_(self.parameters(), 1.0)
+                    nn.utils.clip_grad_norm_(self.parameters(), 0.5)
                     self.optimizer.step()
+                    
                     if name == 'actor':
                         self.optimization_step += 1
                     else:
                         self.explorer_optimization_step += 1
 
                     # 记录损失到wandb
-                    
+            
+            self.scheduler.step()
             if name == 'actor':
                 wandb.log({f"{name}_loss": loss.mean().item(), f"{name}_optimization_step": self.optimization_step})
             else:
@@ -185,7 +190,7 @@ class PPO(nn.Module):
         
 def main():
     set_seed(seed)  # 设置随机种子
-    name = f'es_0.5_{minibatch_size}'
+    name = f'es_3_{minibatch_size}_{seed}_linearLR'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     
@@ -204,7 +209,7 @@ def main():
     len_queue = deque(maxlen=50)
     
     
-    for n_epi in range(10000):
+    for n_epi in range(epoisodes):
         loss_queue = deque(maxlen=time_length)
         input_queue = deque(maxlen=len_deque)
         s, _ = env.reset()

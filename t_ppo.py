@@ -30,7 +30,7 @@ class PPO(nn.Module):
         self.fc_std  = nn.Linear(128,output_dim)
         self.fc_v = nn.Linear(128, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
-        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=1000)
+        self.scheduler = CosineAnnealingLR(self.optimizer, T_max=100)
         self.optimization_step = 0
         self.rollout = []
         self.rollout_len = 3
@@ -150,7 +150,7 @@ class PPO(nn.Module):
       
 def main():
     set_seed(seed)  # 设置随机种子
-    name = f'ppo_1_{minibatch_size}_{seed}_CosLR'
+    name = f'ppo_1_{minibatch_size}_{seed}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     len_deque = time_length * env_obs_dim + (time_length-1) * env.action_space.shape[0]

@@ -18,6 +18,7 @@ print_interval = 20
 loss_threshold = 0.00005
 seed = 42
 epoisodes = 100000
+critic_coef = 1
 
 def get_input(s):
     s_d = s['desired_goal']-s['achieved_goal']

@@ -133,7 +133,9 @@ class PPO(nn.Module):
 
                     surr1 = ratio * advantage
                     surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage
-                    loss = -torch.min(surr1, surr2) + F.smooth_l1_loss(self.v(s) , td_target)
+                    actor_loss = -torch.min(surr1, surr2)
+                    critic_loss = F.smooth_l1_loss(self.v(s) , td_target)
+                    loss = actor_loss + critic_coef * critic_loss 
 
                     self.optimizer.zero_grad()
                     loss.mean().backward()
@@ -150,7 +152,7 @@ class PPO(nn.Module):
       
 def main():
     set_seed(seed)  # 设置随机种子
-    name = f'ppo_1_{minibatch_size}_{seed}'
+    name = f'ppo_1_{minibatch_size}_{seed}_{critic_coef}'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     len_deque = time_length * env_obs_dim + (time_length-1) * env.action_space.shape[0]

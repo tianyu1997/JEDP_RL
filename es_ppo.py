@@ -15,7 +15,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 # Detect device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 class PPO(nn.Module):
     def __init__(self, obs_dim=3, action_dim=1, time_length=5, action_scale = [0.1, 0.1], exploration_action_scale = [0.03, 0.03]):
@@ -167,7 +167,7 @@ class PPO(nn.Module):
                     surr1 = ratio * advantage
                     surr2 = torch.clamp(ratio, 1-eps_clip, 1+eps_clip) * advantage
                     actor_loss = -torch.min(surr1, surr2)
-                    loss =  actor_loss + 0.5 * critic_loss + 0.01 * entropy.mean() 
+                    loss =  actor_loss + critic_coef * critic_loss + 0.00 * entropy.mean() 
 
                     self.optimizer.zero_grad()
                     loss.mean().backward()

@@ -31,7 +31,6 @@ class PPO(nn.Module):
         self.fc_v = nn.Linear(128, 1)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=1000)
-        # self.scheduler = StepLR(self.optimizer, step_size=1000, gamma=0.5)
         self.optimization_step = 0
         self.rollout = []
         self.rollout_len = 3

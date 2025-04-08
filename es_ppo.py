@@ -11,7 +11,7 @@ import gymnasium as gym
 import wandb  # 导入wandb
 from collections import deque
 from config import *
-from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR, LinearLR
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 
 # Detect device
@@ -39,7 +39,6 @@ class PPO(nn.Module):
         self.fc_t = nn.Linear(256, obs_dim)
         self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         self.scheduler = CosineAnnealingLR(self.optimizer, T_max=1000)
-        # self.scheduler = StepLR(self.optimizer, step_size=1000, gamma=0.5)
         self.optimization_step = 0
         self.explorer_optimization_step = 0
 

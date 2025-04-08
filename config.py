@@ -3,7 +3,7 @@ import random
 import torch
 import gymnasium as gym
 
-learning_rate  = 0.0001
+learning_rate  = 0.00001
 gamma           = 0.9
 lmbda           = 0.9
 eps_clip        = 0.15
@@ -16,7 +16,7 @@ env_obs_dim = 6
 time_length = 5
 print_interval = 20
 loss_threshold = 0.00005
-seed = 2025
+seed = 4
 epoisodes = 100000
 
 def get_input(s):

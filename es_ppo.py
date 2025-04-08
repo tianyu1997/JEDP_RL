@@ -190,14 +190,14 @@ class PPO(nn.Module):
         
 def main():
     set_seed(seed)  # 设置随机种子
-    name = f'es_1_{minibatch_size}_{seed}'
+    name = f'es_1_{minibatch_size}_{seed}_pretrained'
     wandb.init(project="JEDP_RL", name=name)  # 初始化wandb项目
     env = gym.make('PandaReach-v3', control_type="Joints",  reward_type="dense")
     
     len_deque = time_length * env_obs_dim + (time_length-1) * env.action_space.shape[0]
     model = PPO(env_obs_dim, env.action_space.shape[0], time_length=time_length, action_scale=[0.1, 0.1], exploration_action_scale=[0.03, 0.03])
     
-    # model.load_state_dict('checkpoints/checkpoint_2000.pth')
+    model.load_state_dict(torch.load('pretrained/es_0.5_128_checkpoint_99999.pth'))
     score = 0.0
     score_count = 0
     e_score = 0

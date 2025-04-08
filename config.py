@@ -16,7 +16,7 @@ env_obs_dim = 6
 time_length = 5
 print_interval = 20
 loss_threshold = 0.00005
-seed = 4
+seed = 42
 epoisodes = 100000
 
 def get_input(s):

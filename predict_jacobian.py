@@ -270,7 +270,8 @@ def train_with_sweep(config=None):
 
 
 if __name__ == "__main__":
-    sweep = 1
+    sweep = 0
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if sweep:
     # Define sweep configuration
         sweep_config = {

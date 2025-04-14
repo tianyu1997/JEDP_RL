@@ -105,6 +105,28 @@ class Panda(PyBulletRobot):
         current_arm_joint_angles = np.array([self.get_joint_angle(joint=i) for i in range(7)])
         target_arm_angles = current_arm_joint_angles + arm_joint_ctrl
         return target_arm_angles
+    
+    def get_jacobian(self):
+        """Get the Jacobian of the end-effector.
+
+        Returns:
+            np.ndarray: Jacobian matrix of the end-effector.
+        """
+        angeles = self.get_joint_angles()
+        old_ee_position = self.get_ee_position()
+        # get the current position and the target position
+        step = 0.01
+        j = []
+        for i in range(7):
+            self.set_joint_angles(angeles)
+            action  = np.zeros(7)
+            action[i] = step
+            self.set_joint_angles(angeles + action)
+            j.append((self.get_ee_position() - old_ee_position) / step)
+        return j
+    
+    def get_joint_angles(self):
+        return np.array([self.get_joint_angle(joint=i) for i in range(7)])
 
     def get_obs(self) -> np.ndarray:
         # end-effector position and velocity
@@ -127,8 +149,6 @@ class Panda(PyBulletRobot):
         joint = np.random.uniform(-random_range, random_range, 7)
         joint += self.neutral_joint_values[:7]
         self.set_joint_angles(joint)
-
-    
 
     def get_fingers_width(self) -> float:
         """Get the distance between the fingers."""

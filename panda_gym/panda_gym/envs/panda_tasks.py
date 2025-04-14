@@ -10,7 +10,6 @@ from panda_gym.envs.tasks.push import Push
 from panda_gym.envs.tasks.reach import Reach
 from panda_gym.envs.tasks.slide import Slide
 from panda_gym.envs.tasks.stack import Stack
-from panda_gym.envs.tasks.predict_jacobian import Predict_Jacobian
 from panda_gym.pybullet import PyBullet
 
 class PandaReachEnv(RobotTaskEnv):

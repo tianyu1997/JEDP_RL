@@ -110,7 +110,7 @@ class JacobianPredictor(nn.Module):
         """
         assert len(robots) == batch_size, "Number of robots must match batch size."
 
-        random_range = 1
+        random_range = 0.1
         input_queues = [deque(maxlen=13) for _ in range(batch_size)]
         for robot, queue in zip(robots, input_queues):
             robot.reset()

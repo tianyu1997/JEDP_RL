@@ -21,7 +21,7 @@ class Panda(PyBulletRobot):
     def __init__(
         self,
         sim: PyBullet,
-        block_gripper: bool = False,
+        block_gripper: bool = True,
         base_position: Optional[np.ndarray] = None,
         control_type: str = "ee",
     ) -> None:
@@ -51,7 +51,7 @@ class Panda(PyBulletRobot):
 
     def set_action(self, action: np.ndarray) -> None:
         action = action.copy()  # ensure action don't change
-        action = np.clip(action, self.action_space.low, self.action_space.high)
+        # action = np.clip(action, self.action_space.low, self.action_space.high)
         if self.control_type == "ee":
             ee_displacement = action[:3]
             target_arm_angles = self.ee_displacement_to_target_arm_angles(ee_displacement)
@@ -145,7 +145,7 @@ class Panda(PyBulletRobot):
 
     def set_joint_neutral(self) -> None:
         """Set the robot to its neutral pose."""
-        random_range = 0.5
+        random_range = 1
         joint = np.random.uniform(-random_range, random_range, 7)
         joint += self.neutral_joint_values[:7]
         self.set_joint_angles(joint)

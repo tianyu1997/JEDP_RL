@@ -38,6 +38,7 @@ def initialize_weights(module):
             elif 'bias' in name:
                 nn.init.zeros_(param)
 
+
 class JacobianPredictor(nn.Module):
     def __init__(self, input_dim=3, output_dim=21, device='cpu'):
         """
@@ -100,6 +101,41 @@ class JacobianPredictor(nn.Module):
         c = self.sigmoid(self.confidece(s))
         return output, c
     
+    def collect_data(self, robots, random_range):
+        """
+        Collect data from multiple robots in parallel.
+        Args:
+            robots (list[Panda]): List of robot instances.
+            input_queues (list[deque]): List of input queues for each robot.
+            random_range (float): Range for random actions.
+            device (torch.device): Device to move tensors to.
+        Returns:
+            torch.Tensor: Batched input tensor.
+            torch.Tensor: Batched target tensor (Jacobian).
+        """
+        inputs, targets = [], []
+        for robot in robots:
+            # Generate random action and update input queue
+            old_ee = robot.get_ee_position()
+            action = np.random.uniform(-random_range, random_range, 7)
+            robot.set_action(action)
+            robot.sim.step()
+            new_ee = robot.get_ee_position()
+            
+            # Prepare input tensor
+            input_tensor = torch.tensor(np.concatenate([old_ee, action, new_ee]), dtype=torch.float32).to(self.device).flatten()
+            jacobian = robot.get_jacobian()
+            target_tensor = torch.flatten(torch.tensor(np.array(jacobian), dtype=torch.float32)).to(self.device)
+
+            inputs.append(input_tensor)
+            targets.append(target_tensor)
+
+        # Stack inputs and targets for batch processing
+        inputs = torch.stack(inputs)
+        targets = torch.stack(targets)
+
+        return inputs, targets
+    
     def train_model(self, robots: list[Panda], epochs=10000, batch_size=8):
         """
         Train the Jacobian predictor model using multiple robots.
@@ -110,49 +146,26 @@ class JacobianPredictor(nn.Module):
         """
         assert len(robots) == batch_size, "Number of robots must match batch size."
 
-        random_range = 0.1
-        input_queues = [deque(maxlen=13) for _ in range(batch_size)]
-        for robot, queue in zip(robots, input_queues):
-            robot.reset()
-            queue.extend(robot.get_ee_position())
         self.reset(batch_size)  # Reset LSTM hidden state for batch size
-
         sum_loss = 0
         step = 0
 
         for epoch in range(epochs):
-            inputs, targets, confidences = [], [], []
-
             # Collect data from all robots
-            for robot, queue in zip(robots, input_queues):
-                action = np.random.uniform(-random_range, random_range, 7)
-                queue.extend(action)
-                queue.extend(robot.get_ee_position())
-
-                input_tensor = torch.tensor(queue.copy(), dtype=torch.float32).to(self.device)
-                jacobian = robot.get_jacobian()
-                target_tensor = torch.flatten(torch.tensor(np.array(jacobian), dtype=torch.float32)).to(self.device)
-
-                inputs.append(input_tensor)
-                targets.append(target_tensor)
-
-            # Stack inputs and targets for batch processing
-            inputs = torch.stack(inputs)
-            targets = torch.stack(targets)
+            inputs, targets = self.collect_data(robots, 0.1)
 
             # Forward pass
             outputs, confidence = self.forward(inputs)
-            confidences.append(confidence)
 
             # Compute loss with confidence
             self.optimizer.zero_grad()
 
             # Adjust confidence penalty based on step
-            confidence_weight = min(1, step / 20 + 0.1)  # Gradually increase confidence importance
-            confidence_loss = torch.mean((1 - confidence) ** 2) * confidence_weight
+            confidence_weight = min(1, step / 30 + 0.1)  # Gradually increase confidence importance
+            confidence_loss = torch.mean((1 - confidence) **2 ) * confidence_weight
 
             # Penalize large errors with high confidence
-            prediction_loss = torch.mean(confidence.squeeze(-1) * (outputs.squeeze() - targets)**2)
+            prediction_loss = torch.mean(confidence.squeeze(-1) * (outputs.squeeze() - targets) ** 2)
 
             # Combine losses
             loss = prediction_loss + 0.01 * confidence_loss
@@ -181,62 +194,119 @@ class JacobianPredictor(nn.Module):
             # Log progress every 100 epochs
             if (epoch + 1) % 100 == 0:
                 avg_loss = sum_loss / 100
-                print(f'Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.4f}')
+                print(f'Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.6f}')
                 wandb.log({"avg_loss": avg_loss})
                 sum_loss = 0  # Reset loss accumulator
                 self.reset(batch_size)
                 step = 0  # Reset step counter
                 # Reset robots and input queues
-                for robot, queue in zip(robots, input_queues):
+                for robot in robots:
                     robot.reset()
-                    queue.clear()
-                    queue.extend(robot.get_ee_position())
+                    robot.sim.step()
 
         print("Training complete.")
         # Save the model
         checkpoint_path = 'checkpoints/jacobian_predictor.pth'
-        torch.save(self.state_dict(), checkpoint_path)
-        print(f"Model saved to {checkpoint_path}")
+        self.save_model(checkpoint_path)
         wandb.save(checkpoint_path)
 
     def predict(self, x): 
         pass
 
+    def save_model(self, path="checkpoints/jacobian_predictor.pth"):
+        """
+        Save the model's state dictionary to the specified path.
+        Args:
+            path (str): Path to save the model.
+        """
+        torch.save(self.state_dict(), path)
+        print(f"Model saved to {path}")
+
+    def load_model(self, path="checkpoints/jacobian_predictor.pth"):
+        """
+        Load the model's state dictionary from the specified path.
+        Args:
+            path (str): Path to load the model from.
+        """
+        self.load_state_dict(torch.load(path, map_location=self.device))
+        self.to(self.device)
+        print(f"Model loaded from {path}")
+
+
+def train_with_sweep(config=None):
+    """
+    Train the model using hyperparameter configurations from wandb sweep.
+    Args:
+        config (dict): Hyperparameter configuration provided by wandb.
+    """
+    with wandb.init(config=config):
+        config = wandb.config
+
+        # Set random seed for reproducibility
+        set_seed(config.seed)
+
+        # Initialize the PyBullet simulator and robots
+        torch.autograd.set_detect_anomaly(True)
+        robots = [
+            Panda(
+                sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
+                block_gripper=False,
+                base_position=None,
+                control_type="joints",
+            )
+            for _ in range(config.batch_size)
+        ]
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device)
+
+        # Watch the model with wandb
+        wandb.watch(jp, log="all")
+
+        # Train the model
+        jp.train_model(robots, epochs=config.epochs, batch_size=config.batch_size)
+
+        # Finish wandb run
+        wandb.finish()
+
 
 if __name__ == "__main__":
-    # Initialize wandb
-    bacth_size = 32
-    wandb.init(project="jacobian-predictor", config={
-        "learning_rate": 0.001,
-        "epochs": 100000,
-        "batch_size": bacth_size,
-        "scheduler": "ReduceLROnPlateau",
-        "clip_value": 1.0,
-        "seed": 42,
-    })
+    sweep = 1
+    if sweep:
+    # Define sweep configuration
+        sweep_config = {
+            "method": "grid",  # Can be "random", "grid", or "bayes"
+            "metric": {"name": "loss", "goal": "minimize"},
+            "parameters": {
+                "learning_rate": {"values": [0.001, 0.0005, 0.0001]},
+                "batch_size": {"values": [8, 16, 32]},
+                "epochs": {"value": 20000},
+                "clip_value": {"values": [0.5, 1.0]},
+                "seed": {"value": 42},
+            },
+        }
 
-    # Set random seed for reproducibility
-    set_seed(42)
+        # Initialize sweep
+        sweep_id = wandb.sweep(sweep_config, project="jacobian-predictor")
 
-    # Initialize the PyBullet simulator and robots
-    sim = PyBullet(render_mode="rgb_array", renderer="Tiny")
-    torch.autograd.set_detect_anomaly(True)
-    robots = [
-        Panda(
-            sim=sim,
-            block_gripper=False,
-            base_position=None,
-            control_type="joints",
-        )
-        for _ in range(bacth_size)  # Create 8 robots for parallel training
-    ]
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    jp = JacobianPredictor(input_dim=13, output_dim=21, device=device)
-
-    # Watch the model with wandb
-    wandb.watch(jp, log="all")
-
-    jp.train_model(robots, epochs=100000, batch_size=bacth_size)
-
-    # Finish wandb run
-    wandb.finish()
+        # Start sweep agent
+        wandb.agent(sweep_id, function=train_with_sweep)
+    else:
+        wandb.init(project="jacobian-predictor", name="test")
+        set_seed(42)  # Set random seed for reproducibility
+        batch_size = 32
+        torch.autograd.set_detect_anomaly(True)
+        robots = [
+            Panda(
+                sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
+                block_gripper=False,
+                base_position=None,
+                control_type="joints",
+            )
+            for _ in range(batch_size)
+        ]
+        
+        # Example: Load model for evaluation or resume training
+        # Uncomment the following lines to load a saved model
+        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device)
+        # jp.load_model("checkpoints/jacobian_predictor.pth")
+        jp.train_model(robots, epochs=100000, batch_size=batch_size)  # Resume training

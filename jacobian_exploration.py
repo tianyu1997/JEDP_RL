@@ -90,7 +90,7 @@ def main():
     set_seed(seed)  # Set random seed
     name = f'ppo_1_{minibatch_size}_{seed}_{critic_coef}'
     wandb.init(project="Explorer", name=name)  # Initialize wandb project
-    model_path = 'checkpoints/jacobian_predictor_epoch_100000.pth'
+    model_path = 'jacobian_predictor_epoch_100000.pth'
     env = Explore_Env(model_path)
     model = PPO(env.observation_space.shape[0], env.action_space.shape[0], action_scale=[0.05, 0.05])
     

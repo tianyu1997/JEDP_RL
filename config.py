@@ -4,7 +4,7 @@ import torch
 import gymnasium as gym
 
 learning_rate  = 0.00001
-gamma           = 0.9
+gamma           = 0.98
 lmbda           = 0.9
 eps_clip        = 0.15
 K_epoch         = 10

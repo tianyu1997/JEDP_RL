@@ -82,7 +82,9 @@ class Explore_Env(gym.Env):
         
         obs, reward = self.get_obs_and_reward()
         # print(f"reward: {reward}")
-        done = reward > -2e-3
+        done = reward > -3e-3
+        if done:
+            reward += 1
         return obs, reward, done, False, {}
 
 def main():

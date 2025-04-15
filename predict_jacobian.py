@@ -99,7 +99,8 @@ class JacobianPredictor(nn.Module):
         x = x.view(x.size(0), 1, 128)  # Adjust for batch size
         s, hidden = self.lstm(x, self.hidden)
         self.hidden = (hidden[0].detach(), hidden[1].detach())
-        self.state = torch.cat([s, self.hidden[0], self.hidden[1]], dim=-1).squeeze()
+        if not self.training:
+            self.state = torch.cat([s.squeeze(), self.hidden[0].squeeze(), self.hidden[1].squeeze()], dim=-1)
         output = self.fc2(s)
         c = self.sigmoid(self.confidece(s))
         return output, c
@@ -163,7 +164,9 @@ class JacobianPredictor(nn.Module):
 
             # Compute loss with confidence
             self.optimizer.zero_grad()
-
+            
+            mse_loss = F.mse_loss(outputs.squeeze(), targets)
+            print(mse_loss.item())
             # Adjust confidence penalty based on step
             confidence_weight = min(1, step / 30 + 0.1)  # Gradually increase confidence importance
             confidence_loss = torch.mean((1 - confidence) **2 ) * confidence_weight
@@ -174,7 +177,7 @@ class JacobianPredictor(nn.Module):
             # Combine losses
             loss = prediction_loss + 0.01 * confidence_loss
             loss.backward()
-
+            
             # Apply gradient clipping
             torch.nn.utils.clip_grad_norm_(self.parameters(), self.clip_value)
 
@@ -319,5 +322,5 @@ if __name__ == "__main__":
         # Example: Load model for evaluation or resume training
         # Uncomment the following lines to load a saved model
         jp = JacobianPredictor(input_dim=13, output_dim=21, device=device)
-        # jp.load_model("checkpoints/jacobian_predictor.pth")
+        jp.load_model("jacobian_predictor_epoch_100000.pth")
         jp.train_model(robots, epochs=100000, batch_size=batch_size)  # Resume training

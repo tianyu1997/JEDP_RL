@@ -210,7 +210,9 @@ def main():
                     break
 
             model.train_net('actor')
-
+            if done:
+                break
+            
         done_queue.append(int(done))
         len_queue.append(count)
         if n_epi % print_interval == 0 and n_epi != 0:

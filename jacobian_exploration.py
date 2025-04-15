@@ -8,6 +8,7 @@ from panda_gym.envs.robots.panda import Panda
 from panda_gym.pybullet import PyBullet
 from t_ppo import PPO
 from torch.distributions import Normal
+from collections import deque
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -80,7 +81,8 @@ class Explore_Env(gym.Env):
         self.new_ee = self.robot.get_ee_position()
         
         obs, reward = self.get_obs_and_reward()
-        done = reward > -5e3
+        # print(f"reward: {reward}")
+        done = reward > -2e-3
         return obs, reward, done, False, {}
 
 def main():
@@ -96,12 +98,14 @@ def main():
     
     score, score_count = 0.0, 0
     rollout = []
+    done_queue = deque(maxlen=50)
+    len_queue = deque(maxlen=50)
     for n_epi in range(epoisodes):
         s = env.reset()
         count, done = 0, False
 
         while count < 100 and not done:
-            for t in range(rollout_len):
+            for _ in range(rollout_len):
                 mu, std = model.pi(s)
                 dist = Normal(mu, std)
                 a = dist.sample()
@@ -117,13 +121,18 @@ def main():
                 score += r
                 score_count += 1
                 count += 1
-
+                if done:
+                    break
             model.train_net('actor')
+            if done:
+                break
 
+        done_queue.append(int(done))
+        len_queue.append(count)
+        wandb.log({"episode": n_epi, "success_rate:":np.mean(done_queue), "ave_len":np.mean(len_queue), "avg_score": score/score_count, "optmization step": model.optimization_step})  # 记录平均得分到wandb
         if n_epi % print_interval == 0 and n_epi != 0:
-            avg_score = score / score_count
-            print(f"# of episode: {n_epi}, avg score: {avg_score:.5f}, optimization step: {model.optimization_step}")
-            wandb.log({"episode": n_epi, "avg_score": avg_score, "optimization_step": model.optimization_step})
+            print("# of episode :{}, SR: {:.2f}, ave_len:{:.2f},  avg score : {:.5f}, optmization step: {}".format(n_epi, np.mean(done_queue),  np.mean(len_queue), score/score_count, model.optimization_step))
+            
             score, score_count = 0.0, 0
 
         if n_epi % save_interval == 0 and n_epi != 0:

@@ -37,6 +37,7 @@ class PPO(nn.Module):
 
         self._init_weights()
         # Move model to device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(device)
 
     def _init_weights(self):
@@ -73,10 +74,10 @@ class PPO(nn.Module):
                 for transition in rollout:
                     s, a, r, s_prime, prob_a, done = transition
                 
-                    s_lst.append(s)
+                    s_lst.append(s.detach().cpu().numpy())
                     a_lst.append(a)
                     r_lst.append([r])
-                    s_prime_lst.append(s_prime)
+                    s_prime_lst.append(s_prime.detach().cpu().numpy())
                     prob_a_lst.append(prob_a.detach().cpu().numpy())
                     done_mask = 0 if done else 1
                     done_lst.append([done_mask])

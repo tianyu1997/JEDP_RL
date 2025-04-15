@@ -40,7 +40,7 @@ def initialize_weights(module):
 
 
 class JacobianPredictor(nn.Module):
-    def __init__(self, input_dim=3, output_dim=21, device='cpu'):
+    def __init__(self, input_dim=3, output_dim=21, device=None):
         """
         Initialize the Jacobian predictor model.
         Args:
@@ -48,6 +48,8 @@ class JacobianPredictor(nn.Module):
             output_dim (int): Dimension of the output (joint angles).
             device (str): Device to run the model on ('cpu' or 'cuda').
         """
+        if device is None: 
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.device = device
         self.input_dim = input_dim
         self.output_dim = output_dim
@@ -85,7 +87,7 @@ class JacobianPredictor(nn.Module):
             torch.zeros([1, batch_size, self.hidden_size], dtype=torch.float).to(self.device)
         )
 
-    def forward(self, input, hidden=None):
+    def forward(self, input):
         """
         Forward pass of the model.
         Args:
@@ -97,9 +99,11 @@ class JacobianPredictor(nn.Module):
         x = x.view(x.size(0), 1, 128)  # Adjust for batch size
         s, hidden = self.lstm(x, self.hidden)
         self.hidden = (hidden[0].detach(), hidden[1].detach())
+        self.state = torch.cat([s, self.hidden[0], self.hidden[1]], dim=-1).squeeze()
         output = self.fc2(s)
         c = self.sigmoid(self.confidece(s))
         return output, c
+    
     
     def collect_data(self, robots, random_range):
         """
@@ -203,6 +207,12 @@ class JacobianPredictor(nn.Module):
                 for robot in robots:
                     robot.reset()
                     robot.sim.step()
+            
+            if (epoch + 1) % 10000 == 0:
+                # Save model every 1000 epochs
+                checkpoint_path = f'checkpoints/jacobian_predictor_epoch_{epoch + 1}.pth'
+                self.save_model(checkpoint_path)
+                wandb.save(checkpoint_path)
 
         print("Training complete.")
         # Save the model
@@ -294,7 +304,7 @@ if __name__ == "__main__":
     else:
         wandb.init(project="jacobian-predictor", name="test")
         set_seed(42)  # Set random seed for reproducibility
-        batch_size = 32
+        batch_size = 8
         torch.autograd.set_detect_anomaly(True)
         robots = [
             Panda(

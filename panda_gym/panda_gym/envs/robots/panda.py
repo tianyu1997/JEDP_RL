@@ -118,11 +118,11 @@ class Panda(PyBulletRobot):
         step = 0.01
         j = []
         for i in range(7):
-            self.set_joint_angles(angeles)
             action  = np.zeros(7)
             action[i] = step
             self.set_joint_angles(angeles + action)
             j.append((self.get_ee_position() - old_ee_position) / step)
+            self.set_joint_angles(angeles)
         return j
     
     def get_joint_angles(self):

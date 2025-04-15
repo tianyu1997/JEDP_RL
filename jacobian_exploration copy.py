@@ -105,7 +105,7 @@ def main():
     """
     set_seed(seed)  # Set random seed
     model_path = 'jacobian_predictor_epoch_100000.pth'
-    env = make_vec_env(lambda: Explore_Env(model_path), n_envs=1)  # Vectorized environment for Stable-Baselines3
+    env = make_vec_env(lambda: Explore_Env(model_path), n_envs=32)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")

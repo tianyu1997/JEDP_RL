@@ -111,7 +111,7 @@ def main():
     Main function to train the PPO agent in the exploration environment.
     """
     set_seed(seed)  # Set random seed
-    index = 1
+    index = 0
     model_path = f'jacobian_predictor_{index}.pth'
     env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=-8e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
 

@@ -69,7 +69,7 @@ class Explore_Env(gym.Env):
         actual_jacobian = torch.flatten(torch.tensor(np.array(actual_jacobian), dtype=torch.float32)).to(self.device)
         predict_jacobian, _ = self.model(input_tensor)
         predict_jacobian = predict_jacobian.squeeze()
-        return self.model.state.detach().cpu().numpy(), -torch.nn.functional.mse_loss(predict_jacobian, actual_jacobian).item()
+        return self.model.state, -torch.nn.functional.mse_loss(predict_jacobian, actual_jacobian).item()
 
     def step(self, action):
         """
@@ -111,17 +111,17 @@ def main():
     Main function to train the PPO agent in the exploration environment.
     """
     set_seed(seed)  # Set random seed
-    model_path = 'jacobian_predictor_epoch_100000.pth'
-    env = make_vec_env(lambda: Explore_Env(model_path), n_envs=32)  # Vectorized environment for Stable-Baselines3
+    model_path = 'jacobian_predictor_epoch_40000.pth'
+    env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=-5e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=128)
-    # model.load("ppo_explorer_model")  # Load the pre-trained model if available
+    model.load("ppo_explorer_model")  # Load the pre-trained model if available
     for i in range(100):
         # Train the agent for a short period
         model.learn(total_timesteps=1e6)
         # Save the model periodically
-        model.save(f"ppo_explorer_model{i}")
+        model.save(f"checkpoints/ppo_explorer_model{i}")
     
 
 if __name__ == "__main__":

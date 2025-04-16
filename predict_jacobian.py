@@ -338,6 +338,6 @@ if __name__ == "__main__":
         
         # Example: Load model for evaluation or resume training
         # Uncomment the following lines to load a saved model
-        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor='ppo_explorer_model1')
-        jp.load_model("jacobian_predictor_epoch_100000.pth")
-        jp.train_model(robots, epochs=100000, batch_size=batch_size)  # Resume training
+        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor='ppo_explorer_model')
+        jp.load_model("jacobian_predictor.pth")
+        jp.train_model(robots, epochs=40000, batch_size=batch_size)  # Resume training

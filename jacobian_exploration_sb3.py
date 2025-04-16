@@ -111,12 +111,12 @@ def main():
     Main function to train the PPO agent in the exploration environment.
     """
     set_seed(seed)  # Set random seed
-    model_path = 'jacobian_predictor_epoch_40000.pth'
+    model_path = 'jacobian_predictor_0.pth'
     env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=-5e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=128)
-    model.load("ppo_explorer_model")  # Load the pre-trained model if available
+    # model.load("ppo_explorer_model")  # Load the pre-trained model if available
     for i in range(100):
         # Train the agent for a short period
         model.learn(total_timesteps=1e6)

@@ -78,6 +78,7 @@ class JacobianPredictor(nn.Module):
         self.reset()
         self.apply(initialize_weights)  # Apply weight initialization
         self.actor = actor
+        self.state = None
         if self.actor is not None:
             env = Explore_Env('checkpoints/jacobian_predictor.pth')
             self.actor = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")
@@ -107,18 +108,19 @@ class JacobianPredictor(nn.Module):
         x = x.view(x.size(0), 1, 128)  # Adjust for batch size
         s, hidden = self.lstm(x, self.hidden)
         self.hidden = (hidden[0].detach(), hidden[1].detach())
-        if not self.training:
-            self.state = torch.cat([s.squeeze(), self.hidden[0].squeeze(), self.hidden[1].squeeze()], dim=-1)
+        # if not self.training:
+        self.state = torch.cat([s.squeeze(), self.hidden[0].squeeze(), self.hidden[1].squeeze()], dim=-1)
+        self.state = self.state.detach().cpu().numpy()
         output = self.fc2(s)
         c = self.sigmoid(self.confidece(s))
         return output, c
     
     def get_action(self):
-        if self.actor is None:
+        if self.actor is None or self.state is None:
             random_range = 0.1
             action = np.random.uniform(-random_range, random_range, 7)
         else:
-            action, _ = self.actor.predict(self.state.detach())
+            action, _ = self.actor.predict(self.state)
         return action
     
     def collect_data(self, robots):
@@ -180,8 +182,8 @@ class JacobianPredictor(nn.Module):
             # Compute loss with confidence
             self.optimizer.zero_grad()
             
-            mse_loss = F.mse_loss(outputs.squeeze(), targets)
-            print(mse_loss.item())
+            # mse_loss = F.mse_loss(outputs.squeeze(), targets)
+            # print(mse_loss.item())
             # Adjust confidence penalty based on step
             confidence_weight = min(1, step / 30 + 0.1)  # Gradually increase confidence importance
             confidence_loss = torch.mean((1 - confidence) **2 ) * confidence_weight
@@ -322,7 +324,7 @@ if __name__ == "__main__":
     else:
         wandb.init(project="jacobian-predictor", name="test")
         set_seed(42)  # Set random seed for reproducibility
-        batch_size = 8
+        batch_size = 1
         torch.autograd.set_detect_anomaly(True)
         robots = [
             Panda(
@@ -336,6 +338,6 @@ if __name__ == "__main__":
         
         # Example: Load model for evaluation or resume training
         # Uncomment the following lines to load a saved model
-        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device)
+        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor='ppo_explorer_model1')
         jp.load_model("jacobian_predictor_epoch_100000.pth")
         jp.train_model(robots, epochs=100000, batch_size=batch_size)  # Resume training

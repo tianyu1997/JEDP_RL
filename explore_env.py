@@ -18,7 +18,7 @@ class Explore_Env(gym.Env):
         super().__init__()
         self.device = device
         self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(128 * 3,), dtype=np.float32)
-        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(7,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-0.1, high=0.1, shape=(7,), dtype=np.float32)
         self.robot = Panda(
             sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
             block_gripper=False,

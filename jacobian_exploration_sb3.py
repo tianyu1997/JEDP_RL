@@ -119,7 +119,7 @@ def main():
     # model.load("ppo_explorer_model")  # Load the pre-trained model if available
     for i in range(100):
         # Train the agent for a short period
-        model.learn(total_timesteps=1e7)
+        model.learn(total_timesteps=1e6)
         # Save the model periodically
         model.save(f"ppo_explorer_model{i}")
     

@@ -50,6 +50,7 @@ class Explore_Env(gym.Env):
         self.robot.sim.step()
         self.new_ee = self.robot.get_ee_position()
         obs, _ = self.get_obs_and_reward()
+        self.length = 0
         return obs, {}
 
     
@@ -84,9 +85,13 @@ class Explore_Env(gym.Env):
         
         obs, reward = self.get_obs_and_reward()
         # print(f"reward: {reward}")
-        done = reward > -3e-3
-        if done:
+        self.length += 1
+        done = False
+        if reward > -3e-3:
+            done = True
             reward += 1
+        if self.length > 100:
+            done = True
         return obs, reward, done, False, {}
 
     def seed(self, seed=None):
@@ -105,13 +110,13 @@ def main():
     """
     set_seed(seed)  # Set random seed
     model_path = 'jacobian_predictor_epoch_100000.pth'
-    env = make_vec_env(lambda: Explore_Env(model_path), n_envs=32)  # Vectorized environment for Stable-Baselines3
+    env = make_vec_env(lambda: Explore_Env(model_path), n_envs=8)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")
 
     # Train the agent
-    model.learn(total_timesteps=100000)
+    model.learn(total_timesteps=10000000)
 
     # Save the trained model
     model.save("ppo_explorer_model")

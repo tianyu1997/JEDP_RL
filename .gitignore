@@ -3,3 +3,4 @@ checkpoints/*
 wandb/*
 tran_ppo.py
 checkpoints_old/*
+ppo_explorer_tensorboard/*

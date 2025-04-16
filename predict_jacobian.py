@@ -9,6 +9,7 @@ import numpy as np
 import random  # Add random for seed initialization
 import wandb  # Add wandb for logging
 # from jacobian_exploration_sb3 import Explore_Env
+from explore_env import Explore_Env
 from stable_baselines3.stable_baselines3 import PPO as SB3PPO
 
 def set_seed(seed):
@@ -77,10 +78,10 @@ class JacobianPredictor(nn.Module):
         self.reset()
         self.apply(initialize_weights)  # Apply weight initialization
         self.actor = actor
-        # if self.actor is not None:
-        #     env = Explore_Env('checkpoints/jacobian_predictor.pth')
-        #     self.actor = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")
-        #     self.actor.load("ppo_explorer_model")  # Load the pre-trained model if available
+        if self.actor is not None:
+            env = Explore_Env('checkpoints/jacobian_predictor.pth')
+            self.actor = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")
+            self.actor.load("ppo_explorer_model")  # Load the pre-trained model if available
         self.to(device)
 
     def reset(self, batch_size=1):

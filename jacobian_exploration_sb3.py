@@ -15,13 +15,15 @@ from stable_baselines3.stable_baselines3.common.env_util import make_vec_env
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Explore_Env(gym.Env):
-    def __init__(self, model_path):
+    def __init__(self, model_path, reward_threshold=-7e-3, max_length=50):
         """
         Initialize the exploration environment.
         Args:
             model_path (str): Path to the pre-trained Jacobian predictor model.
         """
         super().__init__()
+        self.reward_threshold = reward_threshold
+        self.max_length = max_length
         self.device = device
         self.model = JacobianPredictor(input_dim=13, output_dim=21)
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
@@ -87,10 +89,10 @@ class Explore_Env(gym.Env):
         # print(f"reward: {reward}")
         self.length += 1
         done = False
-        if reward > -3e-3:
+        if reward > self.reward_threshold:
             done = True
             reward += 1
-        if self.length > 100:
+        if self.length > self.max_length:
             done = True
         return obs, reward, done, False, {}
 
@@ -110,16 +112,17 @@ def main():
     """
     set_seed(seed)  # Set random seed
     model_path = 'jacobian_predictor_epoch_100000.pth'
-    env = make_vec_env(lambda: Explore_Env(model_path), n_envs=8)  # Vectorized environment for Stable-Baselines3
+    env = make_vec_env(lambda: Explore_Env(model_path), n_envs=32)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent
-    model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")
-
-    # Train the agent
-    model.learn(total_timesteps=10000000)
-
-    # Save the trained model
-    model.save("ppo_explorer_model")
+    model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=128)
+    # model.load("ppo_explorer_model")  # Load the pre-trained model if available
+    for i in range(100):
+        # Train the agent for a short period
+        model.learn(total_timesteps=1e7)
+        # Save the model periodically
+        model.save(f"ppo_explorer_model{i}")
+    
 
 if __name__ == "__main__":
     main()

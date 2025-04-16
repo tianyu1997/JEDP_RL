@@ -8,6 +8,8 @@ from collections import deque
 import numpy as np
 import random  # Add random for seed initialization
 import wandb  # Add wandb for logging
+# from jacobian_exploration_sb3 import Explore_Env
+from stable_baselines3.stable_baselines3 import PPO as SB3PPO
 
 def set_seed(seed):
     """
@@ -40,7 +42,7 @@ def initialize_weights(module):
 
 
 class JacobianPredictor(nn.Module):
-    def __init__(self, input_dim=3, output_dim=21, device=None):
+    def __init__(self, input_dim=3, output_dim=21, device=None, actor=None):
         """
         Initialize the Jacobian predictor model.
         Args:
@@ -67,13 +69,18 @@ class JacobianPredictor(nn.Module):
         self.fc2 = nn.Linear(128, output_dim)
         self.confidece = nn.Linear(128, 1)
         self.sigmoid = nn.Sigmoid()
-        self.optimizer = optim.Adam(self.parameters(), lr=0.001)
+        self.optimizer = optim.Adam(self.parameters(), lr=0.0003)
         # self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         #     self.optimizer, mode='min', factor=0.1, patience=10, verbose=True
         # )  # Replace StepLR with ReduceLROnPlateau
         self.clip_value = 0.5  # Add gradient clipping value
         self.reset()
         self.apply(initialize_weights)  # Apply weight initialization
+        self.actor = actor
+        # if self.actor is not None:
+        #     env = Explore_Env('checkpoints/jacobian_predictor.pth')
+        #     self.actor = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")
+        #     self.actor.load("ppo_explorer_model")  # Load the pre-trained model if available
         self.to(device)
 
     def reset(self, batch_size=1):
@@ -105,8 +112,15 @@ class JacobianPredictor(nn.Module):
         c = self.sigmoid(self.confidece(s))
         return output, c
     
+    def get_action(self):
+        if self.actor is None:
+            random_range = 0.1
+            action = np.random.uniform(-random_range, random_range, 7)
+        else:
+            action, _ = self.actor.predict(self.state.detach())
+        return action
     
-    def collect_data(self, robots, random_range):
+    def collect_data(self, robots):
         """
         Collect data from multiple robots in parallel.
         Args:
@@ -122,7 +136,7 @@ class JacobianPredictor(nn.Module):
         for robot in robots:
             # Generate random action and update input queue
             old_ee = robot.get_ee_position()
-            action = np.random.uniform(-random_range, random_range, 7)
+            action = self.get_action()
             robot.set_action(action)
             robot.sim.step()
             new_ee = robot.get_ee_position()
@@ -157,7 +171,7 @@ class JacobianPredictor(nn.Module):
 
         for epoch in range(epochs):
             # Collect data from all robots
-            inputs, targets = self.collect_data(robots, 0.1)
+            inputs, targets = self.collect_data(robots)
 
             # Forward pass
             outputs, confidence = self.forward(inputs)

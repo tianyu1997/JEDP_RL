@@ -326,7 +326,7 @@ if __name__ == "__main__":
     else:
         wandb.init(project="jacobian-predictor", name="test")
         set_seed(42)  # Set random seed for reproducibility
-        batch_size = 8
+        batch_size = 1
         torch.autograd.set_detect_anomaly(True)
         robots = [
             Panda(

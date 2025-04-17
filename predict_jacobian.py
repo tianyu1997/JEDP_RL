@@ -233,13 +233,13 @@ class JacobianPredictor(nn.Module):
                 # Save model every 1000 epochs
                 checkpoint_path = f'checkpoints/jacobian_predictor_epoch_{epoch + 1}.pth'
                 self.save_model(checkpoint_path)
-                wandb.save(checkpoint_path)
+                # wandb.save(checkpoint_path)
 
         print("Training complete.")
         # Save the model
         checkpoint_path = 'checkpoints/jacobian_predictor.pth'
         self.save_model(checkpoint_path)
-        wandb.save(checkpoint_path)
+        # wandb.save(checkpoint_path)
 
     def predict(self, x): 
         pass

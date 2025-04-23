@@ -15,7 +15,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Aje_Plan_Env(gym.Env):
     def __init__(self, predictor_path, explorer_path,
-        goal_range=0.3, confidence_threshold=0.98):
+        goal_range=0.3, confidence_threshold=0.90):
         """
         Initialize the exploration environment.
         Args:
@@ -69,10 +69,11 @@ class Aje_Plan_Env(gym.Env):
         Returns:
             float: Reward value.
         """
-        d = distance(self.new_ee, self.goal)
-        reward = -d.astype(np.float32) + 10*np.array(d < self.distance_threshold, dtype=np.float32)
+        old_d = distance(self.old_ee, self.goal)
+        new_d = distance(self.new_ee, self.goal)
+        reward = 10*(old_d - new_d) + 10*np.array(new_d < self.distance_threshold, dtype=np.float32)
         confidence = 0
-        if confidence < self.confidence_threshold:
+        while confidence < self.confidence_threshold:
             input_tensor = torch.tensor(
                 np.concatenate([self.old_ee, self.action, self.new_ee]), dtype=torch.float32
             ).to(self.device).flatten().unsqueeze(0)
@@ -114,9 +115,9 @@ def main():
     Main function to train the PPO agent in the exploration environment.
     """
     set_seed(seed)  # Set random seed
-    index = 2  # Index for the model
-    predictor_path = f'jacobian_predictor_{index}.pth'
-    explorer_path = f'ppo_explorer_model_{index-1}'  # Path to the pre-trained explorer model
+    # index = 2  # Index for the model
+    predictor_path = f'jacobian_predictor_0.pth'
+    explorer_path = f'ppo_explorer_model_0'  # Path to the pre-trained explorer model
     env = make_vec_env(lambda: Aje_Plan_Env(predictor_path, explorer_path),  n_envs=32)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent

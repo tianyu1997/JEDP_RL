@@ -20,7 +20,7 @@ seed = 42
 epoisodes = 100000
 critic_coef = 1
 max_length = 200
-distance_threshold = 0.05
+distance_threshold = 0.1
 confidence_threshold = 0.98
 
 def get_input(s):

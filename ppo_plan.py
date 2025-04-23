@@ -61,8 +61,9 @@ class PPO_Plan_Env(gym.Env):
         Returns:
             float: Reward value.
         """
-        d = distance(self.new_ee, self.goal)
-        reward = -d.astype(np.float32) + 10*np.array(d < self.distance_threshold, dtype=np.float32)
+        old_d = distance(self.old_ee, self.goal)
+        new_d = distance(self.new_ee, self.goal)
+        reward = 10*(old_d - new_d) + 10*np.array(new_d < self.distance_threshold, dtype=np.float32)
         obs = np.concatenate([self.old_ee, self.action, self.new_ee])
         return obs, reward
 

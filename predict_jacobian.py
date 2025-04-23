@@ -70,18 +70,20 @@ class JacobianPredictor(nn.Module):
         self.fc2 = self.confidece = nn.Sequential(
             nn.Linear(128, 32),
             nn.ReLU(),
+
             nn.Linear(32, output_dim),
         )
         self.confidece = nn.Sequential(
             nn.Linear(128, 32),
             nn.ReLU(),
-            nn.Linear(32, 1)
+            nn.Linear(32, 1),
+            nn.Sigmoid(),
         )
-        self.sigmoid = nn.Sigmoid()
+    
         self.optimizer = optim.Adam(self.parameters(), lr=0.0003)
-        # self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        #     self.optimizer, mode='min', factor=0.1, patience=10, verbose=True
-        # )  # Replace StepLR with ReduceLROnPlateau
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode='min', factor=0.1, patience=10, verbose=True
+        )  # Replace StepLR with ReduceLROnPlateau
         self.clip_value = 0.5  # Add gradient clipping value
         self.reset()
         self.apply(initialize_weights)  # Apply weight initialization
@@ -119,7 +121,7 @@ class JacobianPredictor(nn.Module):
         self.state = torch.cat([s.squeeze(), self.hidden[0].squeeze(), self.hidden[1].squeeze()], dim=-1)
         self.state = self.state.detach().cpu().numpy()
         output = self.fc2(s)
-        c = self.sigmoid(self.confidece(s))
+        c = self.confidece(s)
         return output, c
     
     def get_action(self):

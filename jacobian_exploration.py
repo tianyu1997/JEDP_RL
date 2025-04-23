@@ -29,7 +29,7 @@ class Explore_Env(gym.Env):
         self.model.eval()
         self.model.to(self.device)
         self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(128 * 3,), dtype=np.float32)
-        self.action_space = gym.spaces.Box(low=-0.1, high=0.1, shape=(7,), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-0.05, high=0.05, shape=(7,), dtype=np.float32)
         self.robot = Panda(
             sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
             block_gripper=False,
@@ -46,7 +46,7 @@ class Explore_Env(gym.Env):
         self.model.reset()
         self.robot.reset()
         self.old_ee = self.robot.get_ee_position()
-        self.action = np.random.uniform(-0.1, 0.1, 7)
+        self.action = np.random.uniform(-0.05, 0.05, 7)
         self.robot.set_action(self.action)
         self.robot.sim.step()
         self.new_ee = self.robot.get_ee_position()
@@ -68,7 +68,10 @@ class Explore_Env(gym.Env):
         actual_jacobian = torch.flatten(torch.tensor(np.array(actual_jacobian), dtype=torch.float32)).to(self.device)
         predict_jacobian, _ = self.model(input_tensor)
         predict_jacobian = predict_jacobian.squeeze()
-        return self.model.state, -torch.nn.functional.mse_loss(predict_jacobian, actual_jacobian).item()
+        predict_loss = torch.nn.functional.mse_loss(predict_jacobian, actual_jacobian).item()
+        norm_loss = np.linalg.norm(self.action)
+        reward = - 100* predict_loss - norm_loss
+        return self.model.state, reward
 
     def step(self, action):
         """
@@ -110,13 +113,13 @@ def main():
     Main function to train the PPO agent in the exploration environment.
     """
     set_seed(seed)  # Set random seed
-    index = 2  # Index for the model
-    model_path = f'jacobian_predictor_{index}.pth'
-    env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=(9-index)*-1e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
+    # index = 2  # Index for the model
+    model_path = f'jacobian_predictor_l.pth'
+    env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=(7)*-1e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=128)
-    model.load(f"ppo_explorer_model_{index-1}")  # Load the pre-trained model if available
+    # model.load(f"ppo_explorer_model_{index-1}")  # Load the pre-trained model if available
     for i in range(10):
         # Train the agent for a short period
         model.learn(total_timesteps=1e6)

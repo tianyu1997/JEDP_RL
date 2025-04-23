@@ -81,8 +81,6 @@ class JacobianPredictor(nn.Module):
         self.actor = None
         self.state = None
         if self.actor_path is not None:
-            env = Explore_Env('checkpoints/jacobian_predictor.pth')
-            self.actor = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/")
             self.actor.load(self.actor_path)  # Load the pre-trained model if available
         self.to(device)
 

@@ -324,7 +324,7 @@ if __name__ == "__main__":
     else:
         wandb.init(project="jacobian-predictor", name="test")
         set_seed(42)  # Set random seed for reproducibility
-        batch_size = 1
+        batch_size = 8
         torch.autograd.set_detect_anomaly(True)
         robots = [
             Panda(
@@ -339,6 +339,6 @@ if __name__ == "__main__":
         # Example: Load model for evaluation or resume training
         # Uncomment the following lines to load a saved model
         index = 1
-        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor=f'ppo_explorer_model_{index}')
-        jp.load_model(f"jacobian_predictor_{index}.pth")
-        jp.train_model(robots, epochs=40000, batch_size=batch_size)  # Resume training
+        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor=None)
+        # jp.load_model(f"jacobian_predictor_{index}.pth")
+        jp.train_model(robots, epochs=100000, batch_size=batch_size)  # Resume training

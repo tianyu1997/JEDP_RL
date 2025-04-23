@@ -70,7 +70,7 @@ class Explore_Env(gym.Env):
         predict_jacobian = predict_jacobian.squeeze()
         predict_loss = torch.nn.functional.mse_loss(predict_jacobian, actual_jacobian).item()
         norm_loss = np.linalg.norm(self.action)
-        reward = - 100* predict_loss - norm_loss
+        reward = - 10* predict_loss - 0.001 * norm_loss
         return self.model.state, reward
 
     def step(self, action):
@@ -93,7 +93,7 @@ class Explore_Env(gym.Env):
         done = False
         if reward > self.reward_threshold:
             done = True
-            reward += 100
+            reward += 10
         if self.length > self.max_length:
             done = True
         return obs, reward, done, False, {}
@@ -114,17 +114,17 @@ def main():
     """
     set_seed(seed)  # Set random seed
     # index = 2  # Index for the model
-    model_path = f'jacobian_predictor_l.pth'
-    env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=(7)*-1e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
+    model_path = f'jacobian_predictor_0.pth'
+    env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=(4)*-1e-2), n_envs=32)  # Vectorized environment for Stable-Baselines3
 
     # Initialize PPO agent
-    model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=128)
+    model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=2048, batch_size=64)
     # model.load(f"ppo_explorer_model_{index-1}")  # Load the pre-trained model if available
     for i in range(10):
         # Train the agent for a short period
         model.learn(total_timesteps=1e6)
         # Save the model periodically
-        model.save(f"checkpoints/ppo_explorer_model{i}")
+        model.save(f"checkpoints/explorer_model{i}")
     
 
 if __name__ == "__main__":

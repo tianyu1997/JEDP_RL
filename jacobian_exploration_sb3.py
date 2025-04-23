@@ -117,7 +117,7 @@ def main():
 
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=128)
-    model.load(f"ppo_explorer_model{index-1}")  # Load the pre-trained model if available
+    model.load(f"ppo_explorer_model_{index-1}")  # Load the pre-trained model if available
     for i in range(10):
         # Train the agent for a short period
         model.learn(total_timesteps=1e6)

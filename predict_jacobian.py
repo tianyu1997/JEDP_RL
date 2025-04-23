@@ -67,8 +67,16 @@ class JacobianPredictor(nn.Module):
         )
         self.hidden_size = 128
         self.lstm = nn.LSTM(128, self.hidden_size, batch_first=True)  # Ensure LSTM supports batch processing
-        self.fc2 = nn.Linear(128, output_dim)
-        self.confidece = nn.Linear(128, 1)
+        self.fc2 = self.confidece = nn.Sequential(
+            nn.Linear(128, 32),
+            nn.ReLU(),
+            nn.Linear(32, output_dim),
+        )
+        self.confidece = nn.Sequential(
+            nn.Linear(128, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
         self.sigmoid = nn.Sigmoid()
         self.optimizer = optim.Adam(self.parameters(), lr=0.0003)
         # self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -258,7 +266,7 @@ class JacobianPredictor(nn.Module):
             path (str): Path to load the model from.
         """
         self.load_state_dict(torch.load(path, map_location=self.device))
-        self.actor.load(self.actor_path)
+        # self.actor.load(self.actor_path)
         self.to(self.device)
         print(f"Model loaded from {path}")
 
@@ -324,7 +332,7 @@ if __name__ == "__main__":
     else:
         wandb.init(project="jacobian-predictor", name="test")
         set_seed(42)  # Set random seed for reproducibility
-        batch_size = 8
+        batch_size = 32
         torch.autograd.set_detect_anomaly(True)
         robots = [
             Panda(
@@ -340,5 +348,5 @@ if __name__ == "__main__":
         # Uncomment the following lines to load a saved model
         index = 1
         jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor=None)
-        # jp.load_model(f"jacobian_predictor_{index}.pth")
+        # jp.load_model(f"checkpoints/jacobian_predictor_epoch_100000.pth")
         jp.train_model(robots, epochs=100000, batch_size=batch_size)  # Resume training

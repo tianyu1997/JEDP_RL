@@ -68,9 +68,10 @@ class JacobianPredictor(nn.Module):
         self.hidden_size = 128
         self.lstm = nn.LSTM(128, self.hidden_size, batch_first=True)  # Ensure LSTM supports batch processing
         self.fc2 = self.confidece = nn.Sequential(
-            nn.Linear(128, 32),
+            nn.Linear(128, 64),
             nn.ReLU(),
-
+            nn.Linear(64, 32),
+            nn.ReLU(),
             nn.Linear(32, output_dim),
         )
         self.confidece = nn.Sequential(

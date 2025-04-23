@@ -93,7 +93,7 @@ class Explore_Env(gym.Env):
         done = False
         if reward > self.reward_threshold:
             done = True
-            reward += 1
+            reward += 100
         if self.length > self.max_length:
             done = True
         return obs, reward, done, False, {}

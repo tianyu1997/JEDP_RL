@@ -22,6 +22,8 @@ critic_coef = 1
 max_length = 300
 distance_threshold = 0.15
 confidence_threshold = 0.98
+n_steps = 2048
+batch_size = 64
 
 def get_input(s):
     s_d = s['desired_goal']-s['achieved_goal']

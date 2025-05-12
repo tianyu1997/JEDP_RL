@@ -50,6 +50,7 @@ class Aje_Plan_Env(gym.Env):
         Returns:
             np.ndarray: Initial observation.
         """
+        self.length = 0
         self.predictor.reset()
         self.robot.reset()
         self.old_ee = self.robot.get_ee_position()
@@ -59,7 +60,7 @@ class Aje_Plan_Env(gym.Env):
         self.robot.sim.step()
         self.new_ee = self.robot.get_ee_position()
         obs, _ = self.get_obs_and_reward()
-        self.length = 0
+        
         return obs, {}
     
     
@@ -71,7 +72,7 @@ class Aje_Plan_Env(gym.Env):
         """
         old_d = distance(self.old_ee, self.goal)
         new_d = distance(self.new_ee, self.goal)
-        reward = 10*(old_d - new_d) + 10*np.array(new_d < self.distance_threshold, dtype=np.float32)
+        reward = 10*(old_d - new_d) - 0.001*self.length + 10*np.array(new_d < self.distance_threshold, dtype=np.float32)
         confidence = 0
         while confidence < self.confidence_threshold:
             input_tensor = torch.tensor(
@@ -117,15 +118,15 @@ def main():
     set_seed(seed)  # Set random seed
     # index = 2  # Index for the model
     predictor_path = f'jacobian_predictor_0.pth'
-    explorer_path = f'ppo_explorer_model_0'  # Path to the pre-trained explorer model
+    explorer_path = f'explorer_model_0'  # Path to the pre-trained explorer model
     env = make_vec_env(lambda: Aje_Plan_Env(predictor_path, explorer_path),  n_envs=32)  # Vectorized environment for Stable-Baselines3
-
+    policy_kwargs = dict(net_arch=dict(pi=[256, 128, 64, 32], vf=[256, 128, 64, 32]))
     # Initialize PPO agent
-    model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=128)
+    model = SB3PPO("MlpPolicy", env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=n_steps, batch_size=batch_size)
     # model.load(f"aje_model_{0}")  # Load the pre-trained model if available
     for i in range(10):
         # Train the agent for a short period
-        model.learn(total_timesteps=1e6)
+        model.learn(total_timesteps=1e7)
         # Save the model periodically
         model.save(f"checkpoints/aje_model_{i}")
     

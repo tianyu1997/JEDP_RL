@@ -20,9 +20,9 @@ seed = 42
 epoisodes = 100000
 critic_coef = 1
 max_length = 300
-distance_threshold = 0.15
+distance_threshold = 0.08
 confidence_threshold = 0.98
-n_steps = 2048
+n_steps = 512
 batch_size = 64
 
 def get_input(s):

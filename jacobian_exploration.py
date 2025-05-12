@@ -14,14 +14,14 @@ from stable_baselines3.stable_baselines3.common.env_util import make_vec_env
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Explore_Env(gym.Env):
-    def __init__(self, model_path, reward_threshold=-7e-3, max_length=50):
+    def __init__(self, model_path, predict_erroe_threshold=2e-3, max_length=50):
         """
         Initialize the exploration environment.
         Args:
             model_path (str): Path to the pre-trained Jacobian predictor model.
         """
         super().__init__()
-        self.reward_threshold = reward_threshold
+        self.predict_erroe_threshold = predict_erroe_threshold
         self.max_length = max_length
         self.device = device
         self.model = JacobianPredictor(input_dim=13, output_dim=21)
@@ -43,6 +43,7 @@ class Explore_Env(gym.Env):
         Returns:
             np.ndarray: Initial observation.
         """
+        self.old_predict_loss = 0
         self.model.reset()
         self.robot.reset()
         self.old_ee = self.robot.get_ee_position()
@@ -50,7 +51,7 @@ class Explore_Env(gym.Env):
         self.robot.set_action(self.action)
         self.robot.sim.step()
         self.new_ee = self.robot.get_ee_position()
-        obs, _ = self.get_obs_and_reward()
+        obs, _, self.old_predict_loss = self.get_obs_and_reward()
         self.length = 0
         return obs, {}
 
@@ -69,9 +70,10 @@ class Explore_Env(gym.Env):
         predict_jacobian, _ = self.model(input_tensor)
         predict_jacobian = predict_jacobian.squeeze()
         predict_loss = torch.nn.functional.mse_loss(predict_jacobian, actual_jacobian).item()
+        predict_advantage = predict_loss - self.old_predict_loss
         norm_loss = max(0, np.linalg.norm(self.action) - 0.03)
-        reward = - 10* predict_loss - 0.001 * norm_loss
-        return self.model.state, reward
+        reward = - 100* predict_advantage - 0.01 * norm_loss
+        return self.model.state, reward, predict_loss
 
     def step(self, action):
         """
@@ -87,11 +89,12 @@ class Explore_Env(gym.Env):
         self.robot.sim.step()
         self.new_ee = self.robot.get_ee_position()
         
-        obs, reward = self.get_obs_and_reward()
+        obs, reward, self.old_predict_loss = self.get_obs_and_reward()
         # print(f"reward: {reward}")
         self.length += 1
         done = False
-        if reward > self.reward_threshold:
+        # print(f"predict_loss: {self.old_predict_loss}")
+        if self.old_predict_loss < self.predict_erroe_threshold:
             done = True
             reward += 10
         if self.length > self.max_length:
@@ -115,14 +118,15 @@ def main():
     set_seed(seed)  # Set random seed
     # index = 2  # Index for the model
     model_path = f'jacobian_predictor_0.pth'
-    env = make_vec_env(lambda: Explore_Env(model_path, reward_threshold=(4)*-1e-2), n_envs=32)  # Vectorized environment for Stable-Baselines3
 
+    env = make_vec_env(lambda: Explore_Env(model_path, predict_erroe_threshold=(1.5)*1e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
+    policy_kwargs = dict(net_arch=dict(pi=[256, 128, 64, 32], vf=[256, 128, 64, 32]))
     # Initialize PPO agent
-    model = SB3PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=2048, batch_size=64)
+    model = SB3PPO("MlpPolicy", env, verbose=1,policy_kwargs=policy_kwargs, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=n_steps, batch_size=batch_size)
     # model.load(f"ppo_explorer_model_{index-1}")  # Load the pre-trained model if available
     for i in range(10):
         # Train the agent for a short period
-        model.learn(total_timesteps=1e6)
+        model.learn(total_timesteps=1e7)
         # Save the model periodically
         model.save(f"checkpoints/explorer_model{i}")
     

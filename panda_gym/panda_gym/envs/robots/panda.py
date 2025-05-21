@@ -68,6 +68,7 @@ class Panda(PyBulletRobot):
 
         target_angles = np.concatenate((target_arm_angles, [target_fingers_width / 2, target_fingers_width / 2]))
         self.control_joints(target_angles=target_angles)
+        self.sim.step()
 
     def ee_displacement_to_target_arm_angles(self, ee_displacement: np.ndarray) -> np.ndarray:
         """Compute the target arm angles from the end-effector displacement.
@@ -155,6 +156,9 @@ class Panda(PyBulletRobot):
         finger1 = self.sim.get_joint_angle(self.body_name, self.fingers_indices[0])
         finger2 = self.sim.get_joint_angle(self.body_name, self.fingers_indices[1])
         return finger1 + finger2
+
+    def get_observation(self):
+        return self.get_ee_position()
 
     def get_ee_position(self) -> np.ndarray:
         """Returns the position of the end-effector as (x, y, z)"""

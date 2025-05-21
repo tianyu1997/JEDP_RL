@@ -1,4 +1,3 @@
-from predict_jacobian import JacobianPredictor
 import numpy as np
 import torch
 import gymnasium as gym

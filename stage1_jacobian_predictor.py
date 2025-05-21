@@ -4,25 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from collections import deque
 import numpy as np
 import random  # Add random for seed initialization
 import wandb  # Add wandb for logging
-# from jacobian_exploration_sb3 import Explore_Env
-from explore_env import Explore_Env
-from stable_baselines3.stable_baselines3 import PPO as SB3PPO
+from config import *  # Import configuration settings
 
-def set_seed(seed):
-    """
-    Set the random seed for reproducibility.
-    Args:
-        seed (int): The seed value.
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
+
+
 
 def initialize_weights(module):
     """
@@ -56,36 +44,37 @@ class JacobianPredictor(nn.Module):
         self.device = device
         self.input_dim = input_dim
         self.output_dim = output_dim
+        self.hidden_size = hidden_size
         super(JacobianPredictor, self).__init__()
         self.fc1 = nn.Sequential(
             nn.Linear(input_dim, 128),
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
-            nn.Linear(256, 128),
+            nn.Linear(256, self.hidden_size),
             nn.ReLU(),
         )
-        self.hidden_size = 128
-        self.lstm = nn.LSTM(128, self.hidden_size, batch_first=True)  # Ensure LSTM supports batch processing
+        
+        self.lstm = nn.LSTM(self.hidden_size, self.hidden_size, batch_first=True)  # Ensure LSTM supports batch processing
         self.fc2 = self.confidece = nn.Sequential(
-            nn.Linear(128, 64),
+            nn.Linear(self.hidden_size, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, output_dim),
         )
         self.confidece = nn.Sequential(
-            nn.Linear(128, 32),
+            nn.Linear(self.hidden_size, 32),
             nn.ReLU(),
             nn.Linear(32, 1),
             nn.Sigmoid(),
         )
     
-        self.optimizer = optim.Adam(self.parameters(), lr=0.0003)
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode='min', factor=0.1, patience=10, verbose=True
+            self.optimizer, mode='min', factor=scheduler_factor, patience=scheduler_patience, verbose=True
         )  # Replace StepLR with ReduceLROnPlateau
-        self.clip_value = 0.5  # Add gradient clipping value
+        self.clip_value = clip_value # Add gradient clipping value
         self.reset()
         self.apply(initialize_weights)  # Apply weight initialization
         self.actor_path = actor
@@ -115,7 +104,7 @@ class JacobianPredictor(nn.Module):
             torch.Tensor: Output tensor of shape (batch_size, output_dim).
         """
         x = self.fc1(input)
-        x = x.view(x.size(0), 1, 128)  # Adjust for batch size
+        x = x.view(x.size(0), 1, self.hidden_size)  # Adjust for batch size
         s, hidden = self.lstm(x, self.hidden)
         self.hidden = (hidden[0].detach(), hidden[1].detach())
         # if not self.training:
@@ -125,13 +114,7 @@ class JacobianPredictor(nn.Module):
         c = self.confidece(s)
         return output, c
     
-    def get_action(self):
-        if self.actor is None or self.state is None:
-            random_range = 0.1
-            action = np.random.uniform(-random_range, random_range, 7)
-        else:
-            action, _ = self.actor.predict(self.state)
-        return action
+    
     
     def collect_data(self, envs):
         """
@@ -149,7 +132,7 @@ class JacobianPredictor(nn.Module):
         for env in envs:
             # Generate random action and update input queue
             old_obs = env.get_observation()
-            action = self.get_action()
+            action = get_random_action()
             env.set_action(action)
             env.sim.step()
             new_obs = env.get_observation()
@@ -169,7 +152,7 @@ class JacobianPredictor(nn.Module):
 
         return inputs, targets
     
-    def train_model(self, envs: list[Panda], epochs=10000, batch_size=8):
+    def train_model(self, envs: list, epochs=epochs, batch_size=batch_size):
         """
         Train the Jacobian predictor model using multiple envs.
         Args:
@@ -196,14 +179,14 @@ class JacobianPredictor(nn.Module):
             # mse_loss = F.mse_loss(outputs.squeeze(), targets)
             # print(mse_loss.item())
             # Adjust confidence penalty based on step
-            confidence_weight = min(1, step / 30 + 0.1)  # Gradually increase confidence importance
+            confidence_weight = min(1, step / confidence_k + confidence_bias)  # Gradually increase confidence importance
             confidence_loss = torch.mean((1 - confidence) **2 ) * confidence_weight
 
             # Penalize large errors with high confidence
             prediction_loss = torch.mean(confidence.squeeze(-1) * (outputs.squeeze() - targets) ** 2)
 
             # Combine losses
-            loss = prediction_loss + 0.01 * confidence_loss
+            loss = prediction_loss + confidence_loss_coef * confidence_loss
             loss.backward()
             
             # Apply gradient clipping
@@ -227,8 +210,8 @@ class JacobianPredictor(nn.Module):
             })
 
             # Log progress every 100 epochs
-            if (epoch + 1) % 100 == 0:
-                avg_loss = sum_loss / 100
+            if (epoch + 1) % log_interval == 0:
+                avg_loss = sum_loss / log_interval
                 print(f'Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.6f}')
                 wandb.log({"avg_loss": avg_loss})
                 sum_loss = 0  # Reset loss accumulator
@@ -239,16 +222,14 @@ class JacobianPredictor(nn.Module):
                     env.reset()
                     env.sim.step()
             
-            if (epoch + 1) % 10000 == 0:
+            if (epoch + 1) % save_interval == 0:
                 # Save model every 1000 epochs
-                checkpoint_path = f'checkpoints/jacobian_predictor_epoch_{epoch + 1}.pth'
-                self.save_model(checkpoint_path)
+                self.save_model( f'checkpoints/jacobian_predictor_epoch_{epoch + 1}.pth')
                 # wandb.save(checkpoint_path)
 
         print("Training complete.")
         # Save the model
-        checkpoint_path = 'checkpoints/jacobian_predictor.pth'
-        self.save_model(checkpoint_path)
+        self.save_model(predictior_checkpoint_path)
         # wandb.save(checkpoint_path)
 
     def predict(self, x): 
@@ -290,19 +271,12 @@ def train_with_sweep(config=None):
         # Initialize the PyBullet simulator and envs
         torch.autograd.set_detect_anomaly(True)
         envs = [
-            Panda(
-                sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
-                block_gripper=False,
-                base_position=None,
-                control_type="joints",
-            )
+            get_env
             for _ in range(config.batch_size)
         ]
-        env = envs[0]
-        if not hasattr(env, 'get_observation') or not hasattr(env, 'get_jacobian'):
-            raise AttributeError("The environment must have 'get_observation' and 'get_jacobian' methods.")
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device)
+        jp = JacobianPredictor(input_dim=input_dim, output_dim=output_dim, device=device)
 
         # Watch the model with wandb
         wandb.watch(jp, log="all")
@@ -338,25 +312,16 @@ if __name__ == "__main__":
         wandb.agent(sweep_id, function=train_with_sweep)
     else:
         wandb.init(project="jacobian-predictor", name="test")
-        set_seed(42)  # Set random seed for reproducibility
-        batch_size = 32
+        set_seed(seed)  # Set random seed for reproducibility
+        batch_size = batch_size
         torch.autograd.set_detect_anomaly(True)
         envs = [
-            Panda(
-                sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
-                block_gripper=False,
-                base_position=None,
-                control_type="joints",
-            )
+            get_env()
             for _ in range(batch_size)
         ]
-        env = envs[0]
-        if not hasattr(env, 'get_observation') or not hasattr(env, 'get_jacobian'):
-            raise AttributeError("The environment must have 'get_observation' and 'get_jacobian' methods.")
-        
         # Example: Load model for evaluation or resume training
         # Uncomment the following lines to load a saved model
         index = 1
-        jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor=None)
+        jp = JacobianPredictor(input_dim=input_dim, output_dim=output_dim, device=device, actor=None)
         # jp.load_model(f"checkpoints/jacobian_predictor_epoch_100000.pth")
-        jp.train_model(envs, epochs=100000, batch_size=batch_size)  # Resume training
+        jp.train_model(envs, epochs=epochs, batch_size=batch_size)  # Resume training

@@ -1,20 +1,20 @@
-from predict_jacobian import JacobianPredictor
+from stage1_jacobian_predictor import JacobianPredictor
 import numpy as np
 import torch
 import gymnasium as gym
 import wandb
-from config import *
 from panda_gym.envs.robots.panda import Panda
 from panda_gym.pybullet import PyBullet
 from torch.distributions import Normal
 from collections import deque
 from stable_baselines3.stable_baselines3 import PPO as SB3PPO
 from stable_baselines3.stable_baselines3.common.env_util import make_vec_env
+from config import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Explore_Env(gym.Env):
-    def __init__(self, model_path, predict_erroe_threshold=2e-3, max_length=50):
+    def __init__(self, model_path, env=None, predict_erroe_threshold=predict_erroe_threshold, max_length=max_length):
         """
         Initialize the exploration environment.
         Args:
@@ -24,18 +24,16 @@ class Explore_Env(gym.Env):
         self.predict_erroe_threshold = predict_erroe_threshold
         self.max_length = max_length
         self.device = device
-        self.model = JacobianPredictor(input_dim=13, output_dim=21)
+        self.model = JacobianPredictor(input_dim=input_dim, output_dim=output_dim)
         self.model.load_state_dict(torch.load(model_path, map_location=self.device))
         self.model.eval()
         self.model.to(self.device)
-        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(128 * 3,), dtype=np.float32)
-        self.action_space = gym.spaces.Box(low=-0.05, high=0.05, shape=(7,), dtype=np.float32)
-        self.robot = Panda(
-            sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
-            block_gripper=False,
-            base_position=None,
-            control_type="joints",
-        )
+        self.observation_space = explorer_obs_space
+        self.action_space = explorer_action_space
+        if env is None:
+            self.env = get_env()
+        else:
+            self.env = env
 
     def reset(self, **kwargs):
         """
@@ -45,12 +43,11 @@ class Explore_Env(gym.Env):
         """
         self.old_predict_loss = 0
         self.model.reset()
-        self.robot.reset()
-        self.old_ee = self.robot.get_ee_position()
-        self.action = np.random.uniform(-0.05, 0.05, 7)
-        self.robot.set_action(self.action)
-        self.robot.sim.step()
-        self.new_ee = self.robot.get_ee_position()
+        self.env.reset()
+        self.old_obs = self.env.get_observation()
+        self.action = get_random_action(0.05)
+        self.env.set_action(self.action)
+        self.new_obs = self.env.get_observation()
         obs, _, self.old_predict_loss = self.get_obs_and_reward()
         self.length = 0
         return obs, {}
@@ -65,14 +62,14 @@ class Explore_Env(gym.Env):
         input_tensor = torch.tensor(
             np.concatenate([self.old_ee, self.action, self.new_ee]), dtype=torch.float32
         ).to(self.device).flatten().unsqueeze(0)
-        actual_jacobian = self.robot.get_jacobian()
+        actual_jacobian = self.env.get_jacobian()
         actual_jacobian = torch.flatten(torch.tensor(np.array(actual_jacobian), dtype=torch.float32)).to(self.device)
         predict_jacobian, _ = self.model(input_tensor)
         predict_jacobian = predict_jacobian.squeeze()
         predict_loss = torch.nn.functional.mse_loss(predict_jacobian, actual_jacobian).item()
         predict_advantage = predict_loss - self.old_predict_loss
-        norm_loss = max(0, np.linalg.norm(self.action) - 0.03)
-        reward = - 100* predict_advantage - 0.01 * norm_loss
+        norm_loss = max(0, np.linalg.norm(self.action) - norm_bias)
+        reward = reward_advantage_coef * predict_advantage + reward_norm_coef * norm_loss
         return self.model.state, reward, predict_loss
 
     def step(self, action):
@@ -84,10 +81,9 @@ class Explore_Env(gym.Env):
             tuple: Observation, reward, done, truncated, and info.
         """
         self.action = action
-        self.old_ee = self.robot.get_ee_position()
-        self.robot.set_action(self.action)
-        self.robot.sim.step()
-        self.new_ee = self.robot.get_ee_position()
+        self.old_ee = self.env.get_observation()
+        self.env.set_action(self.action)
+        self.new_ee = self.env.get_observation()
         
         obs, reward, self.old_predict_loss = self.get_obs_and_reward()
         # print(f"reward: {reward}")
@@ -96,37 +92,26 @@ class Explore_Env(gym.Env):
         # print(f"predict_loss: {self.old_predict_loss}")
         if self.old_predict_loss < self.predict_erroe_threshold:
             done = True
-            reward += 10
+            reward += done_reward
         if self.length > self.max_length:
             done = True
         return obs, reward, done, False, {}
 
-    def seed(self, seed=None):
-        """
-        Set the random seed for the environment.
-        Args:
-            seed (int): Seed value.
-        """
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        self.robot.sim.seed(seed)
 
 def main():
     """
     Main function to train the PPO agent in the exploration environment.
     """
     set_seed(seed)  # Set random seed
-    # index = 2  # Index for the model
-    model_path = f'jacobian_predictor_0.pth'
-
-    env = make_vec_env(lambda: Explore_Env(model_path, predict_erroe_threshold=(1.5)*1e-3), n_envs=32)  # Vectorized environment for Stable-Baselines3
-    policy_kwargs = dict(net_arch=dict(pi=[256, 128, 64, 32], vf=[256, 128, 64, 32]))
+    env = make_vec_env(lambda: Explore_Env(predictor_path, predict_erroe_threshold=predict_erroe_threshold), n_envs=n_envs)  # Vectorized environment for Stable-Baselines3
+    policy_kwargs = dict(net_arch=explorer_net_arch)
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1,policy_kwargs=policy_kwargs, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=n_steps, batch_size=batch_size)
-    # model.load(f"ppo_explorer_model_{index-1}")  # Load the pre-trained model if available
-    for i in range(10):
+    if load_explorer:
+        model.load(explorer_checkpoint_path)  # Load the pre-trained model if available
+    for i in range(iterations):
         # Train the agent for a short period
-        model.learn(total_timesteps=1e7)
+        model.learn(total_timesteps=total_timesteps)
         # Save the model periodically
         model.save(f"checkpoints/explorer_model{i}")
     

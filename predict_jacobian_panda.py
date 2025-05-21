@@ -133,12 +133,12 @@ class JacobianPredictor(nn.Module):
             action, _ = self.actor.predict(self.state)
         return action
     
-    def collect_data(self, envs):
+    def collect_data(self, robots):
         """
-        Collect data from multiple envs in parallel.
+        Collect data from multiple robots in parallel.
         Args:
-            envs (list[Panda]): List of env instances.
-            input_queues (list[deque]): List of input queues for each env.
+            robots (list[Panda]): List of robot instances.
+            input_queues (list[deque]): List of input queues for each robot.
             random_range (float): Range for random actions.
             device (torch.device): Device to move tensors to.
         Returns:
@@ -146,20 +146,19 @@ class JacobianPredictor(nn.Module):
             torch.Tensor: Batched target tensor (Jacobian).
         """
         inputs, targets = [], []
-        for env in envs:
+        for robot in robots:
             # Generate random action and update input queue
-            old_obs = env.get_observation()
+            old_ee = robot.get_ee_position()
             action = self.get_action()
-            env.set_action(action)
-            env.sim.step()
-            new_obs = env.get_observation()
+            robot.set_action(action)
+            robot.sim.step()
+            new_ee = robot.get_ee_position()
             
             # Prepare input tensor
-            input_tensor = torch.tensor(np.concatenate([old_obs, action, new_obs]), dtype=torch.float32).to(self.device).flatten()
-            jacobian = env.get_jacobian()
+            input_tensor = torch.tensor(np.concatenate([old_ee, action, new_ee]), dtype=torch.float32).to(self.device).flatten()
+            jacobian = robot.get_jacobian()
             target_tensor = torch.flatten(torch.tensor(np.array(jacobian), dtype=torch.float32)).to(self.device)
 
-           
             inputs.append(input_tensor)
             targets.append(target_tensor)
 
@@ -169,23 +168,23 @@ class JacobianPredictor(nn.Module):
 
         return inputs, targets
     
-    def train_model(self, envs: list[Panda], epochs=10000, batch_size=8):
+    def train_model(self, robots: list[Panda], epochs=10000, batch_size=8):
         """
-        Train the Jacobian predictor model using multiple envs.
+        Train the Jacobian predictor model using multiple robots.
         Args:
-            envs (list[Panda]): List of env instances to interact with.
+            robots (list[Panda]): List of robot instances to interact with.
             epochs (int): Number of training epochs.
-            batch_size (int): Number of envs to use for parallel data collection.
+            batch_size (int): Number of robots to use for parallel data collection.
         """
-        assert len(envs) == batch_size, "Number of envs must match batch size."
+        assert len(robots) == batch_size, "Number of robots must match batch size."
 
         self.reset(batch_size)  # Reset LSTM hidden state for batch size
         sum_loss = 0
         step = 0
 
         for epoch in range(epochs):
-            # Collect data from all envs
-            inputs, targets = self.collect_data(envs)
+            # Collect data from all robots
+            inputs, targets = self.collect_data(robots)
 
             # Forward pass
             outputs, confidence = self.forward(inputs)
@@ -234,10 +233,10 @@ class JacobianPredictor(nn.Module):
                 sum_loss = 0  # Reset loss accumulator
                 self.reset(batch_size)
                 step = 0  # Reset step counter
-                # Reset envs and input queues
-                for env in envs:
-                    env.reset()
-                    env.sim.step()
+                # Reset robots and input queues
+                for robot in robots:
+                    robot.reset()
+                    robot.sim.step()
             
             if (epoch + 1) % 10000 == 0:
                 # Save model every 1000 epochs
@@ -287,9 +286,9 @@ def train_with_sweep(config=None):
         # Set random seed for reproducibility
         set_seed(config.seed)
 
-        # Initialize the PyBullet simulator and envs
+        # Initialize the PyBullet simulator and robots
         torch.autograd.set_detect_anomaly(True)
-        envs = [
+        robots = [
             Panda(
                 sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
                 block_gripper=False,
@@ -298,9 +297,6 @@ def train_with_sweep(config=None):
             )
             for _ in range(config.batch_size)
         ]
-        env = envs[0]
-        if not hasattr(env, 'get_observation') or not hasattr(env, 'get_jacobian'):
-            raise AttributeError("The environment must have 'get_observation' and 'get_jacobian' methods.")
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         jp = JacobianPredictor(input_dim=13, output_dim=21, device=device)
 
@@ -308,7 +304,7 @@ def train_with_sweep(config=None):
         wandb.watch(jp, log="all")
 
         # Train the model
-        jp.train_model(envs, epochs=config.epochs, batch_size=config.batch_size)
+        jp.train_model(robots, epochs=config.epochs, batch_size=config.batch_size)
 
         # Finish wandb run
         wandb.finish()
@@ -341,7 +337,7 @@ if __name__ == "__main__":
         set_seed(42)  # Set random seed for reproducibility
         batch_size = 32
         torch.autograd.set_detect_anomaly(True)
-        envs = [
+        robots = [
             Panda(
                 sim=PyBullet(render_mode="rgb_array", renderer="Tiny"),
                 block_gripper=False,
@@ -350,13 +346,10 @@ if __name__ == "__main__":
             )
             for _ in range(batch_size)
         ]
-        env = envs[0]
-        if not hasattr(env, 'get_observation') or not hasattr(env, 'get_jacobian'):
-            raise AttributeError("The environment must have 'get_observation' and 'get_jacobian' methods.")
         
         # Example: Load model for evaluation or resume training
         # Uncomment the following lines to load a saved model
         index = 1
         jp = JacobianPredictor(input_dim=13, output_dim=21, device=device, actor=None)
         # jp.load_model(f"checkpoints/jacobian_predictor_epoch_100000.pth")
-        jp.train_model(envs, epochs=100000, batch_size=batch_size)  # Resume training
+        jp.train_model(robots, epochs=100000, batch_size=batch_size)  # Resume training

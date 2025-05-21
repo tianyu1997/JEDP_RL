@@ -95,3 +95,7 @@ def get_goal(name="panda"):
 reward_distance_coef = 10
 reward_length_coef = -0.001
 reward_done_coef = 10
+load_aje = False
+aje_checkpoint_path = f"aje_model_0"
+load_ppo = False
+ppo_checkpoint_path = f"ppo_model_0"

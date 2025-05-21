@@ -44,7 +44,7 @@ class Aje_Plan_Env(gym.Env):
         self.length = 0
         self.predictor.reset()
         self.env.reset()
-        self.old_obs = self.env.get_observation()
+        self.old_ee = self.env.get_observation()
         self.goal = get_goal()
         self.action = get_random_action(0.1)
         self.env.set_action(self.action)
@@ -110,7 +110,8 @@ def main():
     policy_kwargs = dict(net_arch=aje_net_arch)
     # Initialize PPO agent
     model = SB3PPO("MlpPolicy", env, verbose=1, policy_kwargs=policy_kwargs, tensorboard_log="./ppo_explorer_tensorboard/", n_steps=aje_n_steps, batch_size=batch_size)
-    # model.load(f"aje_model_{0}")  # Load the pre-trained model if available
+    if load_aje:
+        model.load(aje_checkpoint_path)  # Load the pre-trained model if available
     for i in range(aje_iterations):
         # Train the agent for a short period
         model.learn(total_timesteps=aje_total_timesteps)

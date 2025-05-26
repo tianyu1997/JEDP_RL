@@ -1,4 +1,4 @@
-from stage1_jacobian_predictor import JacobianPredictor
+from JEDP_RL_sofaenv_selfdefinetrainingpipeline.stage1_jacobian_predictor import JacobianPredictor
 import numpy as np
 import torch
 import gymnasium as gym
